@@ -4,16 +4,17 @@
 
 | Layer | Choice | Version |
 |---|---|---|
-| Framework | React Native + Expo SDK | 54 |
-| Navigation | Expo Router | 6 |
+| Framework | React Native + Expo SDK | 54.0 |
+| Navigation | Expo Router | 6.0 |
 | Animation | Reanimated | 4.1 |
+| Worklets | react-native-worklets | 0.5 |
 | Gestures | Gesture Handler | 2.28 |
-| State | Zustand | 5 |
-| Local DB | expo-sqlite | 16 |
+| State | Zustand | 5.0 |
+| Local DB | expo-sqlite | 16.0 |
 | Settings persistence | AsyncStorage (via Zustand persist) | 2.2 |
-| Sensors | expo-sensors (Gyroscope) | 15 |
+| Sensors | expo-sensors (Gyroscope) | 15.0 |
 | Notifications | expo-notifications | 0.32 |
-| Locale detection | expo-localization | 17 |
+| Locale detection | expo-localization | 17.0 |
 | Language / Region | Runtime detection (no backend) | — |
 
 TanStack Query and Axios are listed as intended in CLAUDE.md but are **not installed or used** in the current build.
@@ -26,26 +27,40 @@ TanStack Query and Axios are listed as intended in CLAUDE.md but are **not insta
 app/
   _layout.tsx             Root layout — DB init, notification handler, theme
   (tabs)/
-    _layout.tsx           Tab navigator (Home, History, Settings)
-    index.tsx             Home screen
-    history.tsx           History screen
-    settings.tsx          Settings screen
+    _layout.tsx           Tab navigator (Home, History, Settings) + FloatingTabBar
+    index.tsx             Home screen entry (re-exports HomeScreen)
+    history.tsx           History screen entry
+    settings.tsx          Settings screen entry
 
 components/
+  ui/
+    FloatingTabBar.tsx    Floating pill tab bar — hides when numpad modal is open
+    GlassSurface.tsx      Shared Liquid Glass surface primitive
+
+features/
   bubble/
     BubbleField.tsx       Positions all bubbles + gyro tilt wrapper
     BubbleItem.tsx        Single bubble — gestures, float/wobble animations
-    AddCategoryButton.tsx FAB + preset picker bottom sheet
+    AddCategorySheet.tsx  FAB "+" button + preset picker bottom sheet
     FolderBubble.tsx      (scaffolded, not wired)
-  input/
+    useBubblePhysics.ts   Spring animation for bubble size changes
+    useDragGesture.ts     Drag gesture helpers (used internally)
+  home/
+    HomeScreen.tsx        Home screen — period bar, total, bubble field, numpad, fireworks
+    PeriodBar.tsx         Period selector tabs (Today/Yesterday/Week/Month)
+    TotalDisplay.tsx      Aggregated spend display for active period
+  numpad/
     NumpadModal.tsx       Bottom-sheet numpad for entering amounts
     AmountDisplay.tsx     Amount display sub-component
   effects/
-    Fireworks.tsx         Particle burst overlay + controller hook
+    Fireworks.tsx         Particle burst overlay
+    useFireworks.ts       Fireworks particle state controller
   timeline/
+    HistoryScreen.tsx     History screen
     TransactionList.tsx   Scrollable list with date grouping
     TransactionItem.tsx   Single row — emoji, name, amount, time
   settings/
+    SettingsScreen.tsx    Settings screen
     SettingsGroup.tsx     Grouped section container
     SettingsRow.tsx       Label + value row with optional right element
     OptionPickerModal.tsx Full-screen picker for single-select options
@@ -57,11 +72,8 @@ stores/
   useSettingsStore.ts
 
 hooks/
-  useBubblePhysics.ts     Spring animation for bubble size changes
   useGyroscopeTilt.ts     Low-pass filtered gyro → shared values
-  useDragGesture.ts       Drag gesture helpers
   useCategoriesWithSize.ts Selector: categories + computed sizes
-  useFireworks.ts         Fireworks particle state
   useFormatCurrency.ts    format() and compact() per settings currency
   useTheme.ts             useColors(), useBubbleColors(), useResolvedTheme()
   useTranslation.ts       t() keyed on settings language
@@ -75,7 +87,7 @@ lib/
     index.ts              Re-exports
 
 constants/
-  theme.ts                DARK_COLORS, LIGHT_COLORS, BUBBLE_COLORS_DARK/LIGHT, SIZES
+  theme.ts                DARK_COLORS, LIGHT_COLORS, BUBBLE_COLORS_DARK/LIGHT, SIZES, SPRING, BLUR, RADII, TIMING
   config.ts               GYROSCOPE, GESTURE, DB_NAME
 
 types/index.ts            Category, CategoryWithSize, Transaction, SyncQueueItem, Period, BubbleColorKey
@@ -211,12 +223,32 @@ All animations run on the UI thread via Reanimated shared values. No JS-thread `
 ```
 BubbleItem gesture = Race(pan, Exclusive(longPress, tap))
 
-tap (< 500 ms, disabled in dragMode)  → openModal(categoryId)
-longPress (≥ 500 ms, disabled in dragMode) → enterDragMode() + haptic
-pan (enabled only in dragMode) → translate bubble → on end: updatePosition()
+tap (< 500 ms, disabled in dragMode)       → runOnJS(openModal)(categoryId)
+longPress (≥ 500 ms, disabled in dragMode) → runOnJS(Haptics.impactAsync)() + runOnJS(enterDragMode)()
+pan (enabled only in dragMode)             → translate bubble → on end: runOnJS(updatePosition)(id, x, y)
 ```
 
-Drag mode disables `tap` and `longPress` gestures, and the tab-bar swipe is also suppressed (iOS/Android swipe conflict avoided by checking `dragMode` before enabling pan).
+**Important:** Reanimated 4 + Gesture Handler 2 compile all gesture callbacks as UI-thread worklets. Any call to a non-worklet function (Zustand actions, Haptics, etc.) **must** be wrapped with `runOnJS`. Calling them bare causes a Hermes C++ exception → `SIGABRT`. See `decisions.md` for rationale.
+
+Drag mode disables `tap` and `longPress` gestures. The `FloatingTabBar` hides entirely when `activeModal !== null` (numpad open), which also prevents tab-switch conflicts during amount entry.
+
+---
+
+## Tab Bar Behaviour
+
+`FloatingTabBar` subscribes to `useUIStore.activeModal`. When a numpad modal is open it returns `null`, fully removing the tab bar from the render tree. This prevents:
+- The tab bar pill from visually overlapping the numpad sheet (z-index conflict)
+- Accidental tab switches while entering an amount
+
+---
+
+## Layout & Safe Area
+
+`FloatingTabBar` is positioned at `bottom: insets.bottom + 16` using `useSafeAreaInsets`.
+
+`AddCategorySheet` FAB is positioned at `bottom: insets.bottom + 84` — above the tab bar pill (pill bottom ~`insets.bottom + 16`, pill height ~56 px, 12 px gap = 84).
+
+`HomeScreen` empty-state hint is at `bottom: insets.bottom + 112` so it always clears the tab bar.
 
 ---
 
@@ -236,8 +268,8 @@ Language and currency default to device locale/region via `expo-localization` in
 
 `constants/theme.ts` exports:
 - `DARK_COLORS` / `LIGHT_COLORS` — `ColorPalette` objects
-- `BUBBLE_COLORS_DARK` / `BUBBLE_COLORS_LIGHT` — per `BubbleColorKey` (`{bg, glow}`)
-- `COLORS` / `BUBBLE_COLORS` — static dark defaults (kept for backwards compat)
+- `BUBBLE_COLORS_DARK` / `BUBBLE_COLORS_LIGHT` — per `BubbleColorKey` (`{bg, glow, border}`)
+- `SPRING`, `BLUR`, `RADII`, `TIMING`, `SIZES` — shared animation/layout constants
 
 `hooks/useTheme.ts`:
 - `useResolvedTheme()` — resolves `'system'` using `useColorScheme()`

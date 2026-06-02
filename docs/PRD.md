@@ -36,12 +36,13 @@ Each bubble shows:
 - Backspace key
 - "Done ✓" confirm button (accent color) — creates transaction, closes modal, triggers fireworks
 - "Cancel" link at bottom
+- The floating tab bar hides automatically while the numpad is open
 
 **Fireworks effect** — particle burst plays from the bubble's position on transaction confirm.
 
 **Empty state hint** — "Tap a bubble to log your first spend" displayed when no transactions exist for the period and drag mode is off.
 
-**Add category button** — floating "+" in the bottom-right corner (hidden at 8-bubble limit). Opens a bottom sheet with 12 preset emoji/name combinations. Color key is auto-assigned by cycling through the 8 bubble colors.
+**Add category button** — floating "+" above the tab bar in the bottom-right corner (hidden at 8-bubble limit). Opens a bottom sheet with 12 preset emoji/name combinations. Color key is auto-assigned by cycling through the 8 bubble colors.
 
 ---
 

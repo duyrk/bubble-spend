@@ -8,7 +8,7 @@ Locked decisions with rationale. Change these only with a deliberate choice, not
 
 ### Bubble limit: 8 max
 
-Hard-capped at 8 categories. Enforced in `useCategoryStore.addCategory()` — throws if exceeded. The `AddCategoryButton` hides itself when at the limit.
+Hard-capped at 8 categories. Enforced in `useCategoryStore.addCategory()` — throws if exceeded. `AddCategorySheet` hides itself when at the limit.
 
 **Why:** More than 8 bubbles on a phone screen creates overlap and makes tap targets unreliable. The PS Vita inspiration also used a constrained launcher grid.
 
@@ -44,11 +44,28 @@ While `dragMode === true`, the horizontal pan gesture is owned by bubbles, not t
 
 ---
 
+### Tab bar hides when numpad is open
+
+`FloatingTabBar` subscribes to `useUIStore.activeModal` and returns `null` whenever it is non-null.
+
+**Why:** The tab bar is positioned absolutely in the navigator layer with `zIndex: 50`. The numpad sheet renders inside the screen content with `zIndex: 11`. Because the navigator renders the tab bar *after* the screen content, React Native stacks it on top regardless of z-index values — the only reliable fix is to remove it from the tree. As a bonus this also prevents accidental tab switches during amount entry.
+
+---
+
 ### No date/time input — always `Date.now()` at confirm
 
 Transaction `transactedAt` is set at the moment the user presses confirm on the numpad.
 
 **Why:** Asking for date/time adds friction to every entry. The primary use case is logging expenses as they happen. Backdating can be addressed later if demand exists.
+
+---
+
+### FAB and empty-hint use safe area insets for bottom offset
+
+`AddCategorySheet` FAB: `bottom: insets.bottom + 84` (clears tab bar pill + gap).
+`HomeScreen` empty-hint: `bottom: insets.bottom + 112`.
+
+**Why:** Hardcoded pixel values broke on devices with a home indicator (`insets.bottom ≈ 34 px`). Using `useSafeAreaInsets` makes both elements device-independent and always above the floating tab bar.
 
 ---
 
@@ -93,6 +110,26 @@ The History screen calls `db.getTransactionsByPeriod` on focus and on period cha
 All animations use `useSharedValue`, `useAnimatedStyle`, and Reanimated worklet-based drivers. The React Native `Animated` API is never used.
 
 **Why:** Reanimated runs entirely on the UI thread. The `Animated` API drives animations from the JS thread, which causes jank under heavy state updates (e.g. transaction confirm triggering recalcSizes, fireworks, and a store reload simultaneously).
+
+---
+
+### All non-worklet calls in gesture callbacks must use `runOnJS`
+
+Reanimated 4 + Gesture Handler 2 compile gesture callbacks (`onBegin`, `onStart`, `onUpdate`, `onEnd`, `onFinalize`) as UI-thread worklets via the Babel plugin. Calling regular JS functions (Zustand store actions, `Haptics.*`, etc.) directly from these callbacks throws a JS exception inside Hermes's worklet runtime, which propagates as a C++ exception and terminates the process (`SIGABRT`).
+
+**Rule:** Any call that crosses from the UI thread back to JS must use `runOnJS(fn)(args)`.
+
+```ts
+// ✅ correct
+.onEnd(() => {
+  runOnJS(openModal)(category.id);
+})
+
+// ❌ crashes at runtime
+.onEnd(() => {
+  openModal(category.id);
+})
+```
 
 ---
 
