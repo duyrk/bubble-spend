@@ -6,6 +6,7 @@ import {
   BUBBLE_COLORS_LIGHT,
   COLORS_DARK,
   COLORS_LIGHT,
+  type BubbleSwatch,
   type ColorPalette,
 } from '@/constants/theme';
 import type { BubbleColorKey } from '@/types';
@@ -22,6 +23,6 @@ export function useColors(): ColorPalette {
   return useResolvedTheme() === 'light' ? COLORS_LIGHT : COLORS_DARK;
 }
 
-export function useBubbleColors(): Record<BubbleColorKey, { bg: string; border: string; glow: string }> {
+export function useBubbleColors(): Record<BubbleColorKey, BubbleSwatch> {
   return useResolvedTheme() === 'light' ? BUBBLE_COLORS_LIGHT : BUBBLE_COLORS_DARK;
 }

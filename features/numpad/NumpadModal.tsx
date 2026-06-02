@@ -1,9 +1,8 @@
-// Liquid Glass bottom-sheet numpad — slide-up, blurred backdrop.
+// Liquid Glass bottom-sheet numpad — slide-up, GlassSurface body, blurred backdrop.
 // Gesture/store logic preserved; visual layer adapts to dark/light theme.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import { BlurView } from 'expo-blur';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -18,6 +17,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import { useCategoryStore } from '@/stores/useCategoryStore';
 import { useTransactionStore } from '@/stores/useTransactionStore';
 import { BLUR, RADII, SPRING, TIMING } from '@/constants/theme';
+import { GlassSurface } from '@/components/ui/GlassSurface';
 
 const MODAL_HEIGHT = 480;
 
@@ -105,9 +105,10 @@ export function NumpadModal({ onTransactionConfirmed }: NumpadModalProps) {
   const displayAmount = displayValue.toLocaleString();
   const isZero = displayValue === 0;
 
-  const iosWrapperBg =
+  const sheetTint =
     resolvedTheme === 'light' ? 'rgba(255,255,255,0.72)' : 'rgba(17,17,28,0.72)';
-  const wrapperBg = Platform.OS === 'android' ? colors.bg.elevated : iosWrapperBg;
+  const confirmRim =
+    resolvedTheme === 'light' ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.25)';
 
   return (
     <>
@@ -115,80 +116,75 @@ export function NumpadModal({ onTransactionConfirmed }: NumpadModalProps) {
         <Pressable style={StyleSheet.absoluteFill} onPress={handleCancel} />
       </Animated.View>
 
-      <Animated.View
-        style={[
-          styles.modalWrapper,
-          modalStyle,
-          { backgroundColor: wrapperBg, borderColor: colors.glass.border },
-        ]}
-      >
-        {Platform.OS === 'ios' ? (
-          <BlurView
-            intensity={BLUR.sheet}
-            tint={resolvedTheme}
-            style={StyleSheet.absoluteFill}
-          />
-        ) : null}
-        <View style={styles.modalSurface}>
-          <View
-            style={[styles.shimmer, { backgroundColor: colors.glass.highlight }]}
-            pointerEvents="none"
-          />
-          <View style={[styles.handle, { backgroundColor: colors.glass.borderStrong }]} />
+      <Animated.View style={[styles.modalWrapper, modalStyle]}>
+        <GlassSurface
+          intensity={BLUR.sheet}
+          borderRadius={RADII.sheet}
+          surfaceTint={sheetTint}
+          shimmer
+          style={styles.sheetGlass}
+        >
+          <View style={styles.modalSurface}>
+            <View style={[styles.handle, { backgroundColor: colors.glass.borderStrong }]} />
 
-          <Text style={[styles.categoryLabel, { color: colors.text.secondary }]}>
-            {category ? `${category.emoji}  ${category.name}` : ''}
-          </Text>
+            <Text style={[styles.categoryLabel, { color: colors.text.secondary }]}>
+              {category ? `${category.emoji}  ${category.name}` : ''}
+            </Text>
 
-          <Animated.View style={[styles.displayRow, amountStyle]}>
-            {meta.symbolBefore ? (
-              <Text style={[styles.currency, { color: colors.text.tertiary }]}>
-                {meta.symbol}{' '}
+            <Animated.View style={[styles.displayRow, amountStyle]}>
+              {meta.symbolBefore ? (
+                <Text style={[styles.currency, { color: colors.text.tertiary }]}>
+                  {meta.symbol}{' '}
+                </Text>
+              ) : null}
+              <Text
+                style={[
+                  styles.displayAmount,
+                  { color: isZero ? colors.text.tertiary : colors.text.primary },
+                ]}
+              >
+                {displayAmount}
               </Text>
-            ) : null}
-            <Text
-              style={[
-                styles.displayAmount,
-                { color: isZero ? colors.text.tertiary : colors.text.primary },
+              {!meta.symbolBefore ? (
+                <Text style={[styles.currency, { color: colors.text.tertiary }]}>
+                  {' '}
+                  {meta.symbol}
+                </Text>
+              ) : null}
+            </Animated.View>
+
+            <View style={styles.numpad}>
+              {KEYS.map((key) => (
+                <NumpadKey key={key} label={key} onPress={() => handleKey(key)} />
+              ))}
+              <NumpadKey label="⌫" onPress={handleDelete} secondary />
+            </View>
+
+            <Pressable
+              disabled={isZero}
+              onPress={() => {
+                if (!isZero) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                handleConfirm();
+              }}
+              style={({ pressed }) => [
+                styles.confirmBtn,
+                {
+                  backgroundColor: colors.accent,
+                  borderTopColor: confirmRim,
+                  opacity: isZero ? 0.35 : pressed ? 0.85 : 1,
+                },
               ]}
             >
-              {displayAmount}
-            </Text>
-            {!meta.symbolBefore ? (
-              <Text style={[styles.currency, { color: colors.text.tertiary }]}>
-                {' '}
-                {meta.symbol}
+              <Text style={styles.confirmText}>{t('doneCheck')}</Text>
+            </Pressable>
+
+            <Pressable onPress={handleCancel} style={styles.cancelBtn} hitSlop={6}>
+              <Text style={[styles.cancelText, { color: colors.text.tertiary }]}>
+                {t('cancel')}
               </Text>
-            ) : null}
-          </Animated.View>
-
-          <View style={styles.numpad}>
-            {KEYS.map((key) => (
-              <NumpadKey key={key} label={key} onPress={() => handleKey(key)} />
-            ))}
-            <NumpadKey label="⌫" onPress={handleDelete} secondary />
+            </Pressable>
           </View>
-
-          <Pressable
-            disabled={isZero}
-            onPress={() => {
-              if (!isZero) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              handleConfirm();
-            }}
-            style={({ pressed }) => [
-              styles.confirmBtn,
-              { backgroundColor: colors.accent, opacity: isZero ? 0.35 : pressed ? 0.85 : 1 },
-            ]}
-          >
-            <Text style={styles.confirmText}>{t('doneCheck')}</Text>
-          </Pressable>
-
-          <Pressable onPress={handleCancel} style={styles.cancelBtn} hitSlop={6}>
-            <Text style={[styles.cancelText, { color: colors.text.tertiary }]}>
-              {t('cancel')}
-            </Text>
-          </Pressable>
-        </View>
+        </GlassSurface>
       </Animated.View>
     </>
   );
@@ -212,22 +208,26 @@ function NumpadKey({
   }));
 
   const pressedColor =
-    resolvedTheme === 'light' ? 'rgba(13,13,20,0.10)' : 'rgba(255,255,255,0.14)';
+    resolvedTheme === 'light' ? 'rgba(13,13,20,0.10)' : 'rgba(255,255,255,0.18)';
+  const baseColor =
+    resolvedTheme === 'light' ? 'rgba(13,13,20,0.04)' : 'rgba(255,255,255,0.08)';
+  const keyBorder =
+    resolvedTheme === 'light' ? 'rgba(13,13,20,0.08)' : 'rgba(255,255,255,0.10)';
 
   return (
     <Animated.View style={[styles.keyWrapper, style]}>
       <Pressable
         onPress={onPress}
         onPressIn={() => {
-          scale.value = withSpring(0.93, SPRING.micro);
+          scale.value = withSpring(0.92, SPRING.micro);
         }}
         onPressOut={() => {
           scale.value = withSpring(1, SPRING.micro);
         }}
         style={({ pressed }) => [
           styles.key,
-          { borderColor: colors.glass.border },
-          { backgroundColor: pressed ? pressedColor : colors.glass.base },
+          { borderColor: keyBorder },
+          { backgroundColor: pressed ? pressedColor : baseColor },
         ]}
       >
         <Text
@@ -255,25 +255,16 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    borderTopLeftRadius: RADII.sheet,
-    borderTopRightRadius: RADII.sheet,
-    overflow: 'hidden',
     zIndex: 11,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
+  },
+  sheetGlass: {
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
   },
   modalSurface: {
     paddingHorizontal: 20,
     paddingTop: 14,
     paddingBottom: 34,
-  },
-  shimmer: {
-    position: 'absolute',
-    top: 0,
-    left: 24,
-    right: 24,
-    height: 1,
   },
   handle: {
     width: 36,
@@ -331,6 +322,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     alignItems: 'center',
     marginTop: 12,
+    borderTopWidth: 1,
   },
   confirmText: {
     fontSize: 17,

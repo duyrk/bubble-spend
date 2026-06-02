@@ -73,28 +73,147 @@ export const COLORS_LIGHT: ColorPalette = {
 // COLORS stays for module-load contexts where a hook can't run.
 export const COLORS = COLORS_DARK;
 
-type BubbleSwatch = { bg: string; border: string; glow: string };
+export type BubbleSwatch = {
+  bg: string;          // legacy flat fill — kept for transaction list dot, etc.
+  border: string;      // legacy stroke
+  glow: string;        // outer shadow color
+  glassFill: string;   // very low-alpha base wash that sits over the blur
+  tintColor: string;   // bottom inner color bloom — the bubble's identity hue
+  rimLight: string;    // specular edge highlight (top-left → bottom-right)
+};
 
 export const BUBBLE_COLORS_DARK: Record<BubbleColorKey, BubbleSwatch> = {
-  frost: { bg: 'rgba(200,220,255,0.11)', border: 'rgba(200,220,255,0.22)', glow: 'rgba(180,200,255,0.25)' },
-  mist:  { bg: 'rgba(180,200,240,0.10)', border: 'rgba(180,200,240,0.20)', glow: 'rgba(160,185,235,0.22)' },
-  dusk:  { bg: 'rgba(160,130,255,0.12)', border: 'rgba(160,130,255,0.24)', glow: 'rgba(140,110,245,0.28)' },
-  slate: { bg: 'rgba(130,160,200,0.10)', border: 'rgba(130,160,200,0.20)', glow: 'rgba(120,150,190,0.22)' },
-  ash:   { bg: 'rgba(200,200,220,0.09)', border: 'rgba(200,200,220,0.18)', glow: 'rgba(190,190,215,0.20)' },
-  haze:  { bg: 'rgba(180,160,240,0.11)', border: 'rgba(180,160,240,0.22)', glow: 'rgba(165,145,230,0.25)' },
-  veil:  { bg: 'rgba(155,200,230,0.10)', border: 'rgba(155,200,230,0.20)', glow: 'rgba(140,190,225,0.22)' },
-  smoke: { bg: 'rgba(170,180,200,0.09)', border: 'rgba(170,180,200,0.18)', glow: 'rgba(160,170,195,0.20)' },
+  frost: {
+    bg: 'rgba(200,220,255,0.11)',
+    border: 'rgba(200,220,255,0.22)',
+    glow: 'rgba(180,200,255,0.25)',
+    glassFill: 'rgba(180,190,210,0.11)',
+    tintColor: 'rgba(160,175,200,0.22)',
+    rimLight: 'rgba(255,255,255,0.30)',
+  },
+  mist: {
+    bg: 'rgba(180,200,240,0.10)',
+    border: 'rgba(180,200,240,0.20)',
+    glow: 'rgba(160,185,235,0.22)',
+    glassFill: 'rgba(170,200,195,0.11)',
+    tintColor: 'rgba(140,185,178,0.22)',
+    rimLight: 'rgba(255,255,255,0.28)',
+  },
+  dusk: {
+    bg: 'rgba(160,130,255,0.12)',
+    border: 'rgba(160,130,255,0.24)',
+    glow: 'rgba(140,110,245,0.28)',
+    glassFill: 'rgba(180,155,205,0.11)',
+    tintColor: 'rgba(160,130,190,0.22)',
+    rimLight: 'rgba(255,255,255,0.32)',
+  },
+  slate: {
+    bg: 'rgba(130,160,200,0.10)',
+    border: 'rgba(130,160,200,0.20)',
+    glow: 'rgba(120,150,190,0.22)',
+    glassFill: 'rgba(140,155,175,0.11)',
+    tintColor: 'rgba(120,140,165,0.22)',
+    rimLight: 'rgba(255,255,255,0.26)',
+  },
+  ash: {
+    bg: 'rgba(200,200,220,0.09)',
+    border: 'rgba(200,200,220,0.18)',
+    glow: 'rgba(190,190,215,0.20)',
+    glassFill: 'rgba(175,160,145,0.11)',
+    tintColor: 'rgba(158,145,128,0.22)',
+    rimLight: 'rgba(255,255,255,0.24)',
+  },
+  haze: {
+    bg: 'rgba(180,160,240,0.11)',
+    border: 'rgba(180,160,240,0.22)',
+    glow: 'rgba(165,145,230,0.25)',
+    glassFill: 'rgba(195,170,155,0.11)',
+    tintColor: 'rgba(175,148,130,0.22)',
+    rimLight: 'rgba(255,255,255,0.30)',
+  },
+  veil: {
+    bg: 'rgba(155,200,230,0.10)',
+    border: 'rgba(155,200,230,0.20)',
+    glow: 'rgba(140,190,225,0.22)',
+    glassFill: 'rgba(200,165,175,0.11)',
+    tintColor: 'rgba(180,140,150,0.22)',
+    rimLight: 'rgba(255,255,255,0.28)',
+  },
+  smoke: {
+    bg: 'rgba(170,180,200,0.09)',
+    border: 'rgba(170,180,200,0.18)',
+    glow: 'rgba(160,170,195,0.20)',
+    glassFill: 'rgba(155,165,180,0.11)',
+    tintColor: 'rgba(135,148,165,0.22)',
+    rimLight: 'rgba(255,255,255,0.24)',
+  },
 };
 
 export const BUBBLE_COLORS_LIGHT: Record<BubbleColorKey, BubbleSwatch> = {
-  frost: { bg: 'rgba(80,130,210,0.16)',  border: 'rgba(80,130,210,0.30)',  glow: 'rgba(80,130,210,0.30)' },
-  mist:  { bg: 'rgba(110,135,200,0.15)', border: 'rgba(110,135,200,0.28)', glow: 'rgba(110,135,200,0.28)' },
-  dusk:  { bg: 'rgba(120,90,230,0.16)',  border: 'rgba(120,90,230,0.30)',  glow: 'rgba(120,90,230,0.30)' },
-  slate: { bg: 'rgba(70,110,160,0.15)',  border: 'rgba(70,110,160,0.28)',  glow: 'rgba(70,110,160,0.28)' },
-  ash:   { bg: 'rgba(110,110,140,0.13)', border: 'rgba(110,110,140,0.26)', glow: 'rgba(110,110,140,0.26)' },
-  haze:  { bg: 'rgba(140,110,220,0.15)', border: 'rgba(140,110,220,0.28)', glow: 'rgba(140,110,220,0.28)' },
-  veil:  { bg: 'rgba(80,150,200,0.15)',  border: 'rgba(80,150,200,0.28)',  glow: 'rgba(80,150,200,0.28)' },
-  smoke: { bg: 'rgba(110,120,150,0.13)', border: 'rgba(110,120,150,0.26)', glow: 'rgba(110,120,150,0.26)' },
+  frost: {
+    bg: 'rgba(80,130,210,0.16)',
+    border: 'rgba(80,130,210,0.30)',
+    glow: 'rgba(80,130,210,0.30)',
+    glassFill: 'rgba(160,180,210,0.15)',
+    tintColor: 'rgba(120,150,200,0.30)',
+    rimLight: 'rgba(255,255,255,0.55)',
+  },
+  mist: {
+    bg: 'rgba(110,135,200,0.15)',
+    border: 'rgba(110,135,200,0.28)',
+    glow: 'rgba(110,135,200,0.28)',
+    glassFill: 'rgba(150,195,185,0.15)',
+    tintColor: 'rgba(110,175,165,0.30)',
+    rimLight: 'rgba(255,255,255,0.52)',
+  },
+  dusk: {
+    bg: 'rgba(120,90,230,0.16)',
+    border: 'rgba(120,90,230,0.30)',
+    glow: 'rgba(120,90,230,0.30)',
+    glassFill: 'rgba(170,140,205,0.15)',
+    tintColor: 'rgba(140,105,190,0.30)',
+    rimLight: 'rgba(255,255,255,0.58)',
+  },
+  slate: {
+    bg: 'rgba(70,110,160,0.15)',
+    border: 'rgba(70,110,160,0.28)',
+    glow: 'rgba(70,110,160,0.28)',
+    glassFill: 'rgba(125,150,180,0.15)',
+    tintColor: 'rgba(95,130,170,0.30)',
+    rimLight: 'rgba(255,255,255,0.50)',
+  },
+  ash: {
+    bg: 'rgba(110,110,140,0.13)',
+    border: 'rgba(110,110,140,0.26)',
+    glow: 'rgba(110,110,140,0.26)',
+    glassFill: 'rgba(170,150,130,0.15)',
+    tintColor: 'rgba(140,118,100,0.30)',
+    rimLight: 'rgba(255,255,255,0.48)',
+  },
+  haze: {
+    bg: 'rgba(140,110,220,0.15)',
+    border: 'rgba(140,110,220,0.28)',
+    glow: 'rgba(140,110,220,0.28)',
+    glassFill: 'rgba(195,165,150,0.15)',
+    tintColor: 'rgba(170,135,115,0.30)',
+    rimLight: 'rgba(255,255,255,0.55)',
+  },
+  veil: {
+    bg: 'rgba(80,150,200,0.15)',
+    border: 'rgba(80,150,200,0.28)',
+    glow: 'rgba(80,150,200,0.28)',
+    glassFill: 'rgba(200,160,170,0.15)',
+    tintColor: 'rgba(180,125,140,0.30)',
+    rimLight: 'rgba(255,255,255,0.52)',
+  },
+  smoke: {
+    bg: 'rgba(110,120,150,0.13)',
+    border: 'rgba(110,120,150,0.26)',
+    glow: 'rgba(110,120,150,0.26)',
+    glassFill: 'rgba(145,158,175,0.15)',
+    tintColor: 'rgba(115,130,150,0.30)',
+    rimLight: 'rgba(255,255,255,0.48)',
+  },
 };
 
 export const BUBBLE_COLORS = BUBBLE_COLORS_DARK;

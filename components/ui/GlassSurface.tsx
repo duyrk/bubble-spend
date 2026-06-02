@@ -1,7 +1,7 @@
 // Cross-platform Liquid Glass surface primitive.
 // iOS: BlurView (UIBlurEffect) — native frosted glass, tint follows theme.
-// Android: semi-transparent View fallback.
-// shimmer adds a 1px top-edge highlight that simulates refraction.
+// Android: semi-transparent solid fallback (windowed blur is not reliable cross-device).
+// shimmer renders a 1px inner-top highlight to suggest refractive edge lighting.
 
 import type { ReactNode } from 'react';
 import { BlurView, type BlurTint } from 'expo-blur';
@@ -16,53 +16,65 @@ interface GlassSurfaceProps {
   tint?: BlurTint;
   shimmer?: boolean;
   borderColor?: string;
+  /** Solid color to layer over the blur (or use as Android fallback). Defaults to themed glass base. */
+  surfaceTint?: string;
   style?: StyleProp<ViewStyle>;
 }
 
 export function GlassSurface({
   children,
-  intensity = 24,
+  intensity = 22,
   borderRadius = RADII.card,
   tint,
-  shimmer = false,
+  shimmer = true,
   borderColor,
+  surfaceTint,
   style,
 }: GlassSurfaceProps) {
   const colors = useColors();
   const resolvedTheme = useResolvedTheme();
   const effectiveTint: BlurTint = tint ?? resolvedTheme;
   const effectiveBorder = borderColor ?? colors.glass.border;
+  const androidFallback = surfaceTint ?? (resolvedTheme === 'light' ? 'rgba(255,255,255,0.72)' : 'rgba(20,19,35,0.85)');
   const radiusStyle = { borderRadius };
 
   const shimmerNode = shimmer ? (
     <View
       pointerEvents="none"
-      style={[styles.shimmer, radiusStyle, { backgroundColor: colors.glass.highlight }]}
+      style={[styles.shimmer, { backgroundColor: colors.glass.highlight }]}
     />
   ) : null;
 
+  let blurNode: ReactNode = null;
   if (Platform.OS === 'ios') {
-    return (
-      <BlurView
-        intensity={intensity}
-        tint={effectiveTint}
-        style={[styles.base, { borderColor: effectiveBorder }, radiusStyle, style]}
-      >
-        {shimmerNode}
-        {children}
-      </BlurView>
-    );
+    try {
+      blurNode = (
+        <BlurView
+          intensity={intensity}
+          tint={effectiveTint}
+          style={StyleSheet.absoluteFill}
+        />
+      );
+    } catch {
+      blurNode = null;
+    }
   }
+
+  const overlayBg = Platform.OS === 'ios' ? surfaceTint : androidFallback;
 
   return (
     <View
       style={[
         styles.base,
-        { backgroundColor: colors.glass.base, borderColor: effectiveBorder },
+        { borderColor: effectiveBorder },
         radiusStyle,
         style,
       ]}
     >
+      {blurNode}
+      {overlayBg ? (
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: overlayBg }]} />
+      ) : null}
       {shimmerNode}
       {children}
     </View>

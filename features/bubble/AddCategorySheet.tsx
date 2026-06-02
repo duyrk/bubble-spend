@@ -3,11 +3,13 @@
 import { useCallback, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
-import { useColors } from '@/hooks/useTheme';
+import { useColors, useResolvedTheme } from '@/hooks/useTheme';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useCategoryStore } from '@/stores/useCategoryStore';
-import { SIZES } from '@/constants/theme';
+import { BLUR, SIZES } from '@/constants/theme';
+import { GlassSurface } from '@/components/ui/GlassSurface';
 import type { BubbleColorKey } from '@/types';
 
 const COLOR_KEYS: BubbleColorKey[] = ['frost', 'mist', 'dusk', 'slate', 'ash', 'haze', 'veil', 'smoke'];
@@ -27,9 +29,12 @@ const PRESETS: { emoji: string; name: string }[] = [
   { emoji: '💄', name: 'Beauty' },
 ];
 
+const FAB_SIZE = 44;
+
 export function AddCategorySheet() {
   const insets = useSafeAreaInsets();
   const colors = useColors();
+  const resolvedTheme = useResolvedTheme();
   const { t } = useTranslation();
   const categories = useCategoryStore((s) => s.categories);
   const addCategory = useCategoryStore((s) => s.addCategory);
@@ -56,46 +61,70 @@ export function AddCategorySheet() {
 
   if (atLimit) return null;
 
+  const fabRim =
+    resolvedTheme === 'light' ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.28)';
+  const sheetTint =
+    resolvedTheme === 'light' ? 'rgba(255,255,255,0.82)' : 'rgba(17,17,28,0.82)';
+
   return (
     <>
       <Pressable
         onPress={() => setOpen(true)}
-        style={[
-          styles.fab,
-          {
-            bottom: insets.bottom + 84,
-            backgroundColor: colors.glass.base,
-            borderColor: colors.glass.border,
-          },
-        ]}
+        style={[styles.fabHost, { bottom: insets.bottom + 84 }]}
         hitSlop={8}
       >
-        <Text style={[styles.fabIcon, { color: colors.text.secondary }]}>+</Text>
+        <View style={styles.fab}>
+          {/* Liquid Glass FAB circle — same recipe as bubbles, scaled down */}
+          <GlassSurface
+            borderRadius={FAB_SIZE / 2}
+            intensity={28}
+            shimmer={false}
+            style={StyleSheet.absoluteFill}
+          />
+          {/* Specular highlight arc — top sheen */}
+          <View pointerEvents="none" style={styles.fabSpecularHost}>
+            <LinearGradient
+              colors={[fabRim, 'rgba(255,255,255,0)']}
+              start={{ x: 0.5, y: 0 }}
+              end={{ x: 0.5, y: 1 }}
+              style={styles.fabSpecular}
+            />
+          </View>
+          <Text style={[styles.fabIcon, { color: colors.text.secondary }]}>+</Text>
+        </View>
       </Pressable>
 
       <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
         <View style={styles.backdrop}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setOpen(false)} />
-          <View style={[styles.sheet, { backgroundColor: colors.bg.elevated, borderColor: colors.glass.border }]}>
-            <View style={[styles.handle, { backgroundColor: colors.glass.border }]} />
-            <Text style={[styles.title, { color: colors.text.primary }]}>{t('addCategory')}</Text>
-            <ScrollView contentContainerStyle={styles.grid}>
-              {PRESETS.map((p) => (
-                <Pressable
-                  key={p.emoji}
-                  onPress={() => handleAdd(p)}
-                  style={({ pressed }) => [
-                    styles.cell,
-                    { backgroundColor: colors.glass.base, borderColor: colors.glass.border },
-                    pressed && { backgroundColor: colors.glass.borderStrong, transform: [{ scale: 0.95 }] },
-                  ]}
-                >
-                  <Text style={styles.cellEmoji}>{p.emoji}</Text>
-                  <Text style={[styles.cellName, { color: colors.text.primary }]}>{p.name}</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-          </View>
+          <GlassSurface
+            intensity={BLUR.sheet}
+            borderRadius={20}
+            surfaceTint={sheetTint}
+            shimmer
+            style={styles.sheetGlass}
+          >
+            <View style={styles.sheet}>
+              <View style={[styles.handle, { backgroundColor: colors.glass.border }]} />
+              <Text style={[styles.title, { color: colors.text.primary }]}>{t('addCategory')}</Text>
+              <ScrollView contentContainerStyle={styles.grid}>
+                {PRESETS.map((p) => (
+                  <Pressable
+                    key={p.emoji}
+                    onPress={() => handleAdd(p)}
+                    style={({ pressed }) => [
+                      styles.cell,
+                      { backgroundColor: colors.glass.base, borderColor: colors.glass.border },
+                      pressed && { backgroundColor: colors.glass.borderStrong, transform: [{ scale: 0.95 }] },
+                    ]}
+                  >
+                    <Text style={styles.cellEmoji}>{p.emoji}</Text>
+                    <Text style={[styles.cellName, { color: colors.text.primary }]}>{p.name}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </View>
+          </GlassSurface>
         </View>
       </Modal>
     </>
@@ -103,17 +132,38 @@ export function AddCategorySheet() {
 }
 
 const styles = StyleSheet.create({
-  fab: {
+  fabHost: {
     position: 'absolute',
     right: 16,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderStyle: 'dashed',
+    width: FAB_SIZE,
+    height: FAB_SIZE,
+    zIndex: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  fab: {
+    width: FAB_SIZE,
+    height: FAB_SIZE,
+    borderRadius: FAB_SIZE / 2,
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 1,
+    overflow: 'hidden',
+  },
+  fabSpecularHost: {
+    position: 'absolute',
+    top: 3,
+    left: 7,
+    width: 30,
+    height: 14,
+    borderRadius: 14,
+    overflow: 'hidden',
+    transform: [{ rotate: '-18deg' }],
+  },
+  fabSpecular: {
+    flex: 1,
   },
   fabIcon: {
     fontSize: 24,
@@ -125,13 +175,16 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
   },
-  sheet: {
+  sheetGlass: {
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    maxHeight: '70%',
+  },
+  sheet: {
     padding: 16,
     paddingBottom: 32,
-    borderWidth: StyleSheet.hairlineWidth,
-    maxHeight: '70%',
   },
   handle: {
     width: 32,

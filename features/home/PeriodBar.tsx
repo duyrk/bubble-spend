@@ -1,18 +1,18 @@
-// Period tab selector — pill row inside a glass container with a spring-animated indicator.
+// Period tab selector — Liquid Glass pill with a spring-animated white-translucent indicator.
 
 import { useEffect, useMemo, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
-import { BlurView } from 'expo-blur';
+import { Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
-import { useColors, useResolvedTheme } from '@/hooks/useTheme';
+import { useResolvedTheme } from '@/hooks/useTheme';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { Period } from '@/types';
 import type { TranslationKey } from '@/lib/i18n';
-import { RADII, SPRING } from '@/constants/theme';
+import { SPRING } from '@/constants/theme';
+import { GlassSurface } from '@/components/ui/GlassSurface';
 
 const PERIODS: { key: Period; tKey: TranslationKey }[] = [
   { key: 'today', tKey: 'today' },
@@ -28,7 +28,6 @@ interface PeriodBarProps {
 
 export function PeriodBar({ active, onChange }: PeriodBarProps) {
   const { t } = useTranslation();
-  const colors = useColors();
   const resolvedTheme = useResolvedTheme();
   const [tabLayouts, setTabLayouts] = useState<Record<Period, { x: number; width: number }>>(
     {} as Record<Period, { x: number; width: number }>,
@@ -63,23 +62,17 @@ export function PeriodBar({ active, onChange }: PeriodBarProps) {
     [],
   );
 
-  const iosGlassBg =
-    resolvedTheme === 'light' ? 'rgba(255,255,255,0.55)' : 'rgba(17,17,28,0.55)';
-  const glassBg = Platform.OS === 'android' ? colors.bg.elevated : iosGlassBg;
+  const activeFill = resolvedTheme === 'light' ? 'rgba(13,13,20,0.10)' : 'rgba(255,255,255,0.14)';
+  const activeText = resolvedTheme === 'light' ? 'rgba(13,13,20,0.92)' : '#fff';
+  const inactiveText = resolvedTheme === 'light' ? 'rgba(13,13,20,0.40)' : 'rgba(255,255,255,0.35)';
 
   return (
     <View style={styles.outer}>
-      <View style={[styles.glass, { backgroundColor: glassBg, borderColor: colors.glass.border }]}>
-        {Platform.OS === 'ios' ? (
-          <BlurView intensity={28} tint={resolvedTheme} style={StyleSheet.absoluteFill} />
-        ) : null}
+      <GlassSurface borderRadius={14} intensity={28} shimmer>
         <View style={styles.row}>
           <Animated.View
-            style={[
-              styles.indicator,
-              indicatorStyle,
-              { backgroundColor: colors.glass.base, borderColor: colors.glass.border },
-            ]}
+            pointerEvents="none"
+            style={[styles.indicator, indicatorStyle, { backgroundColor: activeFill }]}
           />
           {PERIODS.map((p) => {
             const isActive = active === p.key;
@@ -94,7 +87,10 @@ export function PeriodBar({ active, onChange }: PeriodBarProps) {
                 <Text
                   style={[
                     styles.label,
-                    { color: isActive ? colors.text.primary : colors.text.tertiary },
+                    {
+                      color: isActive ? activeText : inactiveText,
+                      fontWeight: isActive ? '700' : '600',
+                    },
                   ]}
                 >
                   {t(p.tKey)}
@@ -103,7 +99,7 @@ export function PeriodBar({ active, onChange }: PeriodBarProps) {
             );
           })}
         </View>
-      </View>
+      </GlassSurface>
     </View>
   );
 }
@@ -113,11 +109,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 6,
-  },
-  glass: {
-    borderRadius: RADII.pill,
-    overflow: 'hidden',
-    borderWidth: 1,
   },
   row: {
     flexDirection: 'row',
@@ -131,7 +122,6 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 12,
-    fontWeight: '600',
     letterSpacing: 0.2,
   },
   indicator: {
@@ -139,7 +129,6 @@ const styles = StyleSheet.create({
     top: 4,
     left: 0,
     bottom: 4,
-    borderRadius: RADII.pill,
-    borderWidth: 0.5,
+    borderRadius: 10,
   },
 });

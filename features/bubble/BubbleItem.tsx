@@ -1,9 +1,21 @@
-// Single bubble — Liquid Glass surface, gyro-aware, gesture-driven.
-// Gestures and store logic preserved; visual layer adapts to dark/light theme.
+// Single bubble — multi-layer Liquid Glass sphere, gyro-aware specular tracking.
+// Gestures/store logic preserved; the visual stack inside the bubble is new.
+//
+// Layer stack (back → front):
+//   0  outer drop shadow      — wrapper shadow (unclipped)
+//   1  rim gradient ring      — diagonal white gradient, sits behind everything else
+//   2  inner core (inset 1.5) — clipped to circle; holds blur + tint + specular
+//        a  BlurView           (iOS frosted glass)
+//        b  glassFill wash     (also the Android fallback fill)
+//        c  bottom color bloom (the bubble's identity hue)
+//        d  top specular arc   (gyro-tracked lens flare)
+//        e  inner-top sheen    (1px refractive edge highlight)
+//   3  content                — emoji, name, amount (sits above everything)
 
 import { memo, useEffect, useRef } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
 import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -15,6 +27,7 @@ import Animated, {
   Easing,
   cancelAnimation,
   runOnJS,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
@@ -32,9 +45,17 @@ interface BubbleItemProps {
   category: CategoryWithSize;
   dragMode: boolean;
   index: number;
+  tiltX?: SharedValue<number>;
+  tiltY?: SharedValue<number>;
 }
 
-function BubbleItemImpl({ category, dragMode, index }: BubbleItemProps) {
+// Border thickness of the rim gradient ring (px)
+const RIM_WIDTH = 1.5;
+
+// How far the specular highlight shifts opposite to gyro tilt at max drift (px)
+const SPECULAR_PARALLAX = 2.5;
+
+function BubbleItemImpl({ category, dragMode, index, tiltX, tiltY }: BubbleItemProps) {
   const { animatedSize } = useBubblePhysics(category.size);
   const bubbleColors = useBubbleColors();
   const palette = bubbleColors[category.colorKey];
@@ -167,6 +188,7 @@ function BubbleItemImpl({ category, dragMode, index }: BubbleItemProps) {
 
   const gesture = Gesture.Race(pan, Gesture.Exclusive(longPress, tap));
 
+  // Outer wrapper — drop shadow + animated size + transforms
   const wrapperStyle = useAnimatedStyle(() => {
     const size = animatedSize.value;
     return {
@@ -198,18 +220,39 @@ function BubbleItemImpl({ category, dragMode, index }: BubbleItemProps) {
     };
   });
 
-  const bubbleSurfaceStyle = useAnimatedStyle(() => {
+  // Rim gradient layer — sits behind the inner core; visible only on the inset ring
+  const rimRadiusStyle = useAnimatedStyle(() => ({
+    borderRadius: animatedSize.value / 2,
+  }));
+
+  // Inner core — inset by RIM_WIDTH so the rim gradient bleeds through as a ring
+  const innerCoreStyle = useAnimatedStyle(() => {
     const size = animatedSize.value;
-    return { borderRadius: size / 2 };
+    return {
+      borderRadius: (size - RIM_WIDTH * 2) / 2,
+    };
+  });
+
+  // Specular highlight shifts opposite to gyro tilt — simulates a fixed overhead
+  // light source as the device tilts. (-tilt / max-drift) × parallax = px offset.
+  const specularStyle = useAnimatedStyle(() => {
+    const tx = tiltX ? -tiltX.value * (SPECULAR_PARALLAX / 8) : 0;
+    const ty = tiltY ? -tiltY.value * (SPECULAR_PARALLAX / 8) : 0;
+    return {
+      transform: [{ translateX: tx }, { translateY: ty }, { rotate: '-18deg' }],
+    };
   });
 
   const amountStr = compact(category.total);
 
-  // Theme-aware text and shimmer colors
-  const shimmerColor =
-    resolvedTheme === 'light' ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.18)';
   const nameColor =
     resolvedTheme === 'light' ? 'rgba(13,13,20,0.78)' : 'rgba(255,255,255,0.78)';
+  const innerTopSheen =
+    resolvedTheme === 'light' ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.20)';
+  // Android has no BlurView fallback — give the inner core a stronger base wash
+  // so the bubble has visual mass against the dark background.
+  const androidFallback =
+    resolvedTheme === 'light' ? 'rgba(245,245,250,0.55)' : 'rgba(28,28,42,0.55)';
 
   return (
     <GestureDetector gesture={gesture}>
@@ -219,35 +262,81 @@ function BubbleItemImpl({ category, dragMode, index }: BubbleItemProps) {
           { left: `${category.positionX}%`, top: `${category.positionY}%` },
         ]}
       >
-        {/* Outer glow ring — pulses on transaction confirm */}
+        {/* Layer 0a — pulsing outer glow on transaction confirm */}
         <Animated.View
           pointerEvents="none"
           style={[styles.glowRing, glowRingStyle, { backgroundColor: palette.glow }]}
         />
-        {/* The bubble itself */}
+
+        {/* Bubble wrapper — owns drop shadow + transforms */}
         <Animated.View
           style={[
             styles.bubble,
             wrapperStyle,
-            bubbleSurfaceStyle,
-            {
-              shadowColor: palette.glow,
-              borderColor: palette.border,
-              backgroundColor: Platform.OS === 'android' ? palette.bg : 'transparent',
-            },
+            { shadowColor: palette.glow },
           ]}
         >
-          {Platform.OS === 'ios' ? (
-            <Animated.View
-              style={[StyleSheet.absoluteFill, bubbleSurfaceStyle, { overflow: 'hidden' }]}
-            >
-              <BlurView intensity={BLUR.bubble} tint={resolvedTheme} style={StyleSheet.absoluteFill} />
-              <View style={[StyleSheet.absoluteFill, { backgroundColor: palette.bg }]} />
+          {/* Layer 1 — rim gradient ring (diagonal white sheen). The inner core
+              sits inset by RIM_WIDTH, so this only shows on the perimeter. */}
+          <Animated.View
+            pointerEvents="none"
+            style={[StyleSheet.absoluteFill, styles.clip, rimRadiusStyle]}
+          >
+            <LinearGradient
+              colors={[palette.rimLight, 'rgba(255,255,255,0.04)']}
+              start={{ x: 0.2, y: 0 }}
+              end={{ x: 0.8, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+          </Animated.View>
+
+          {/* Layer 2 — inner core: blur + tint + specular, clipped & inset */}
+          <Animated.View
+            pointerEvents="none"
+            style={[styles.innerCore, styles.clip, innerCoreStyle]}
+          >
+            {Platform.OS === 'ios' ? (
+              <BlurView
+                intensity={BLUR.bubble}
+                tint={resolvedTheme}
+                style={StyleSheet.absoluteFill}
+              />
+            ) : (
+              <View
+                pointerEvents="none"
+                style={[StyleSheet.absoluteFill, { backgroundColor: androidFallback }]}
+              />
+            )}
+
+            <View
+              pointerEvents="none"
+              style={[StyleSheet.absoluteFill, { backgroundColor: palette.glassFill }]}
+            />
+
+            <LinearGradient
+              pointerEvents="none"
+              colors={['transparent', palette.tintColor]}
+              start={{ x: 0.5, y: 0.4 }}
+              end={{ x: 0.5, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+
+            <Animated.View pointerEvents="none" style={[styles.specularHost, specularStyle]}>
+              <LinearGradient
+                colors={[palette.rimLight, 'rgba(255,255,255,0)']}
+                start={{ x: 0.5, y: 0 }}
+                end={{ x: 0.5, y: 1 }}
+                style={styles.specular}
+              />
             </Animated.View>
-          ) : null}
 
-          <View pointerEvents="none" style={[styles.shimmer, { backgroundColor: shimmerColor }]} />
+            <View
+              pointerEvents="none"
+              style={[styles.innerSheen, { backgroundColor: innerTopSheen }]}
+            />
+          </Animated.View>
 
+          {/* Layer 3 — content */}
           <Text style={styles.emoji}>{category.emoji}</Text>
           <Text style={[styles.name, { color: nameColor }]}>{category.name}</Text>
           <Text
@@ -280,17 +369,41 @@ const styles = StyleSheet.create({
     position: 'absolute',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    overflow: 'hidden',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6,
-    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.45,
+    shadowRadius: 28,
+    elevation: 12,
   },
-  shimmer: {
+  clip: {
+    overflow: 'hidden',
+  },
+  innerCore: {
+    position: 'absolute',
+    top: RIM_WIDTH,
+    left: RIM_WIDTH,
+    right: RIM_WIDTH,
+    bottom: RIM_WIDTH,
+  },
+  specularHost: {
+    position: 'absolute',
+    top: '6%',
+    left: '14%',
+    width: '58%',
+    height: '32%',
+    borderTopLeftRadius: 200,
+    borderTopRightRadius: 200,
+    borderBottomLeftRadius: 200,
+    borderBottomRightRadius: 200,
+    overflow: 'hidden',
+  },
+  specular: {
+    flex: 1,
+  },
+  innerSheen: {
     position: 'absolute',
     top: 0,
-    left: '12%',
-    right: '12%',
+    left: '20%',
+    right: '20%',
     height: 1,
   },
   emoji: {

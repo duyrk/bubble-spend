@@ -3,7 +3,7 @@
 import { useCallback, useEffect } from 'react';
 import { StyleSheet, Text, View, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useBubbleColors, useColors } from '@/hooks/useTheme';
+import { useBubbleColors, useColors, useResolvedTheme } from '@/hooks/useTheme';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useUIStore } from '@/stores/useUIStore';
 import { useTransactionStore } from '@/stores/useTransactionStore';
@@ -18,6 +18,7 @@ import { TotalDisplay } from './TotalDisplay';
 export function HomeScreen() {
   const insets = useSafeAreaInsets();
   const colors = useColors();
+  const resolvedTheme = useResolvedTheme();
   const { t } = useTranslation();
 
   const bubbleColors = useBubbleColors();
@@ -57,8 +58,18 @@ export function HomeScreen() {
   const total = getTotal();
   const isEmpty = transactions.length === 0;
 
+  const bloomCenter = resolvedTheme === 'light' ? 'rgba(124,106,247,0.12)' : 'rgba(124,106,247,0.10)';
+  const bloomOffset = resolvedTheme === 'light' ? 'rgba(100,160,200,0.10)' : 'rgba(100,160,200,0.07)';
+
   return (
     <View style={[styles.container, { backgroundColor: colors.bg.primary, paddingTop: insets.top + 8 }]}>
+      {/* Ambient room lighting — soft color blooms behind everything. The two
+          oversized circles read as radial halos via natural alpha falloff. */}
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        <View style={[styles.bloomCenter, { backgroundColor: bloomCenter }]} />
+        <View style={[styles.bloomOffset, { backgroundColor: bloomOffset }]} />
+      </View>
+
       <PeriodBar active={activePeriod} onChange={setPeriod} />
       <TotalDisplay amount={total} />
 
@@ -90,6 +101,26 @@ export function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    overflow: 'hidden',
+  },
+  bloomCenter: {
+    position: 'absolute',
+    width: 700,
+    height: 700,
+    borderRadius: 350,
+    top: '20%',
+    left: '50%',
+    marginLeft: -350,
+    opacity: 0.85,
+  },
+  bloomOffset: {
+    position: 'absolute',
+    width: 500,
+    height: 500,
+    borderRadius: 250,
+    top: -120,
+    right: -160,
+    opacity: 0.85,
   },
   emptyHint: {
     position: 'absolute',

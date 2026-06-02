@@ -1,10 +1,9 @@
 // Custom floating Liquid Glass tab bar — replaces the default Expo Router tab bar.
-// Pill-shaped surface, accent dot indicator, icon scale bounce on tab change.
+// Pill-shaped GlassSurface, accent dot indicator, icon scale bounce on tab change.
 
 import { useEffect } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BlurView } from 'expo-blur';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -14,6 +13,7 @@ import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useColors, useResolvedTheme } from '@/hooks/useTheme';
 import { useUIStore } from '@/stores/useUIStore';
 import { BLUR, RADII, SPRING } from '@/constants/theme';
+import { GlassSurface } from '@/components/ui/GlassSurface';
 
 const TAB_ICONS: Record<string, string> = {
   index: '⬡',
@@ -29,31 +29,27 @@ export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarP
 
   if (activeModal !== null) return null;
 
-  // iOS uses a real BlurView; Android needs a solid surface tint
-  const iosWrapperBg =
+  const surfaceTint =
     resolvedTheme === 'light' ? 'rgba(255,255,255,0.62)' : 'rgba(17,17,28,0.62)';
-  const wrapperBg = Platform.OS === 'android' ? colors.bg.elevated : iosWrapperBg;
+  const rimColor =
+    resolvedTheme === 'light' ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.18)';
+  const inactiveIcon =
+    resolvedTheme === 'light' ? 'rgba(13,13,20,0.40)' : 'rgba(255,255,255,0.35)';
+  const inactiveLabel =
+    resolvedTheme === 'light' ? 'rgba(13,13,20,0.30)' : 'rgba(255,255,255,0.30)';
 
   return (
     <View pointerEvents="box-none" style={[styles.host, { bottom: insets.bottom + 16 }]}>
-      <View
-        style={[
-          styles.barWrapper,
-          { backgroundColor: wrapperBg, borderColor: colors.glass.border },
-        ]}
+      <GlassSurface
+        intensity={BLUR.tabBar}
+        borderRadius={RADII.pill}
+        surfaceTint={surfaceTint}
+        shimmer={false}
+        style={styles.barWrapper}
       >
-        {Platform.OS === 'ios' ? (
-          <BlurView
-            intensity={BLUR.tabBar}
-            tint={resolvedTheme}
-            style={StyleSheet.absoluteFill}
-          />
-        ) : null}
+        {/* Top rim highlight — single 1px line for the lit edge */}
+        <View pointerEvents="none" style={[styles.rim, { backgroundColor: rimColor }]} />
         <View style={styles.barInner}>
-          <View
-            style={[styles.shimmer, { backgroundColor: colors.glass.highlight }]}
-            pointerEvents="none"
-          />
           {state.routes.map((route, index) => {
             const { options } = descriptors[route.key];
             const isFocused = state.index === index;
@@ -81,13 +77,13 @@ export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarP
                 focused={isFocused}
                 onPress={onPress}
                 activeColor={colors.accent}
-                inactiveIconColor={colors.text.secondary}
-                inactiveLabelColor={colors.text.tertiary}
+                inactiveIconColor={inactiveIcon}
+                inactiveLabelColor={inactiveLabel}
               />
             );
           })}
         </View>
-      </View>
+      </GlassSurface>
     </View>
   );
 }
@@ -154,27 +150,25 @@ const styles = StyleSheet.create({
     zIndex: 50,
   },
   barWrapper: {
-    borderRadius: RADII.pill,
-    overflow: 'hidden',
-    borderWidth: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.45,
     shadowRadius: 24,
     elevation: 8,
   },
+  rim: {
+    position: 'absolute',
+    top: 0,
+    left: 32,
+    right: 32,
+    height: 1,
+    zIndex: 2,
+  },
   barInner: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 6,
     paddingVertical: 6,
-  },
-  shimmer: {
-    position: 'absolute',
-    top: 0,
-    left: 24,
-    right: 24,
-    height: 1,
   },
   tab: {
     alignItems: 'center',

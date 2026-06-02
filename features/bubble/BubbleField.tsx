@@ -21,7 +21,14 @@ export function BubbleField() {
     <View style={styles.container}>
       <Animated.View style={[styles.field, tiltStyle]}>
         {categoriesWithSize.map((cat, index) => (
-          <BubbleItem key={cat.id} category={cat} index={index} dragMode={dragMode} />
+          <BubbleItem
+            key={cat.id}
+            category={cat}
+            index={index}
+            dragMode={dragMode}
+            tiltX={tiltX}
+            tiltY={tiltY}
+          />
         ))}
       </Animated.View>
       {!dragMode && <AddCategorySheet />}
