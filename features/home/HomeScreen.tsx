@@ -1,4 +1,4 @@
-// Home screen — period tabs, total, bubble field, numpad, fireworks, empty hint
+// Home screen — period tabs, summary row, bubble field, numpad, fireworks, empty hint
 
 import { useCallback, useEffect } from 'react';
 import { StyleSheet, Text, View, Pressable } from 'react-native';
@@ -14,6 +14,9 @@ import { FireworksOverlay } from '@/features/effects/Fireworks';
 import { useFireworks } from '@/features/effects/useFireworks';
 import { PeriodBar } from './PeriodBar';
 import { TotalDisplay } from './TotalDisplay';
+import type { TransactionType } from '@/types';
+
+const INCOME_GLOW = 'rgba(61,184,130,0.6)';
 
 export function HomeScreen() {
   const insets = useSafeAreaInsets();
@@ -26,9 +29,12 @@ export function HomeScreen() {
   const setPeriod = useUIStore((s) => s.setPeriod);
   const dragMode = useUIStore((s) => s.dragMode);
   const exitDragMode = useUIStore((s) => s.exitDragMode);
+  const openIncomeModal = useUIStore((s) => s.openIncomeModal);
   const loadByPeriod = useTransactionStore((s) => s.loadByPeriod);
   const transactions = useTransactionStore((s) => s.transactions);
-  const getTotal = useTransactionStore((s) => s.getTotal);
+  const getExpenseTotal = useTransactionStore((s) => s.getExpenseTotal);
+  const getIncomeTotal = useTransactionStore((s) => s.getIncomeTotal);
+  const getNetBalance = useTransactionStore((s) => s.getNetBalance);
   const recalcSizes = useCategoryStore((s) => s.recalcSizes);
   const categories = useCategoryStore((s) => s.categories);
   const loaded = useCategoryStore((s) => s.loaded);
@@ -46,8 +52,12 @@ export function HomeScreen() {
   }, [transactions, recalcSizes]);
 
   const handleTransactionConfirmed = useCallback(
-    (categoryId: string, x: number, y: number) => {
+    (categoryId: string, x: number, y: number, type: TransactionType) => {
       loadByPeriod(activePeriod);
+      if (type === 'income') {
+        setTimeout(() => triggerFireworks(x, y, INCOME_GLOW), 80);
+        return;
+      }
       const cat = categories.find((c) => c.id === categoryId);
       const glow = cat ? bubbleColors[cat.colorKey].glow : undefined;
       setTimeout(() => triggerFireworks(x, y, glow), 80);
@@ -55,7 +65,9 @@ export function HomeScreen() {
     [activePeriod, bubbleColors, categories, loadByPeriod, triggerFireworks],
   );
 
-  const total = getTotal();
+  const expenseTotal = getExpenseTotal();
+  const incomeTotal = getIncomeTotal();
+  const netBalance = getNetBalance();
   const isEmpty = transactions.length === 0;
 
   const bloomCenter = resolvedTheme === 'light' ? 'rgba(124,106,247,0.12)' : 'rgba(124,106,247,0.10)';
@@ -71,7 +83,12 @@ export function HomeScreen() {
       </View>
 
       <PeriodBar active={activePeriod} onChange={setPeriod} />
-      <TotalDisplay amount={total} />
+      <TotalDisplay
+        expense={expenseTotal}
+        income={incomeTotal}
+        net={netBalance}
+        onIncomePress={openIncomeModal}
+      />
 
       <BubbleField />
 

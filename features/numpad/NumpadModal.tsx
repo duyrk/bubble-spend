@@ -1,5 +1,6 @@
 // Liquid Glass bottom-sheet numpad — slide-up, GlassSurface body, blurred backdrop.
-// Gesture/store logic preserved; visual layer adapts to dark/light theme.
+// Hosts both expense (per-category) and income (global) entry; the type toggle
+// at the top swaps between them without resetting the entered amount.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -18,16 +19,44 @@ import { useCategoryStore } from '@/stores/useCategoryStore';
 import { useTransactionStore } from '@/stores/useTransactionStore';
 import { BLUR, RADII, SPRING, TIMING } from '@/constants/theme';
 import { GlassSurface } from '@/components/ui/GlassSurface';
+import {
+  INCOME_CATEGORY_ID,
+  type TransactionType,
+  type Transaction,
+  type Category,
+} from '@/types';
 
-const MODAL_HEIGHT = 480;
+const MODAL_HEIGHT = 520;
+const INCOME_COLOR = '#3DB882';
 
 interface NumpadModalProps {
-  onTransactionConfirmed?: (categoryId: string, x: number, y: number) => void;
+  // Create flow (Home) — driven by the global UI store.
+  onTransactionConfirmed?: (
+    categoryId: string,
+    x: number,
+    y: number,
+    type: TransactionType,
+  ) => void;
+  // Edit flow (History) — when `editMode` is true the modal ignores the global
+  // UI store entirely and is driven by these props. Only the amount is editable;
+  // the type/category are locked to the transaction being edited.
+  editMode?: boolean;
+  editTransaction?: Transaction | null;
+  editCategory?: Category;
+  onEditClose?: () => void;
+  onEditConfirm?: (id: string, amount: number) => void;
 }
 
 const KEYS: string[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '000', '0'];
 
-export function NumpadModal({ onTransactionConfirmed }: NumpadModalProps) {
+export function NumpadModal({
+  onTransactionConfirmed,
+  editMode,
+  editTransaction,
+  editCategory,
+  onEditClose,
+  onEditConfirm,
+}: NumpadModalProps) {
   const { t } = useTranslation();
   const { meta } = useFormatCurrency();
   const colors = useColors();
@@ -38,17 +67,59 @@ export function NumpadModal({ onTransactionConfirmed }: NumpadModalProps) {
   const categories = useCategoryStore((s) => s.categories);
   const add = useTransactionStore((s) => s.add);
 
-  const [amount, setAmount] = useState('0');
-  const isOpen = activeModal !== null;
-  const category = categories.find((c) => c.id === activeModal);
+  const editing = editMode === true;
 
-  const prevActiveModal = useRef<string | null>(null);
+  const [amount, setAmount] = useState('0');
+  const [txType, setTxType] = useState<TransactionType>('expense');
+
+  // Open/close + source context resolve from either the edit props (History) or
+  // the global store (create flow, Home). A given instance is driven by exactly
+  // one of them: Home passes no edit props; History sets editMode.
+  const isOpen = editing ? editTransaction != null : activeModal !== null;
+  const createSourceId = activeModal?.categoryId ?? null;
+  const sourceCategory = editing
+    ? editCategory
+    : createSourceId
+      ? categories.find((c) => c.id === createSourceId)
+      : undefined;
+
+  // In edit mode the type is fixed to the transaction — both toggle segments are
+  // locked. In create mode, expense is locked only at the income entry point
+  // (no source bubble to flip back to).
+  const expenseDisabled = editing ? true : createSourceId === null;
+  const incomeDisabled = editing;
+
+  // Reset amount + type each time the create modal is (re)opened. Switching the
+  // type *while* open keeps the typed amount; that's handled by setTxType below.
+  const prevActiveModalKey = useRef<string | null>(null);
   useEffect(() => {
-    if (activeModal !== prevActiveModal.current) {
-      prevActiveModal.current = activeModal;
-      if (activeModal !== null) setAmount('0');
+    if (editing) return;
+    const key = activeModal
+      ? `${activeModal.categoryId ?? 'income'}:${activeModal.defaultType}`
+      : null;
+    if (key !== prevActiveModalKey.current) {
+      prevActiveModalKey.current = key;
+      if (activeModal !== null) {
+        setAmount('0');
+        setTxType(activeModal.defaultType);
+      }
     }
-  }, [activeModal]);
+  }, [activeModal, editing]);
+
+  // Edit mode: pre-fill the amount and lock the type whenever a new transaction
+  // is opened for editing.
+  const prevEditId = useRef<string | null>(null);
+  useEffect(() => {
+    if (!editing) return;
+    const id = editTransaction?.id ?? null;
+    if (id !== prevEditId.current) {
+      prevEditId.current = id;
+      if (editTransaction) {
+        setAmount(String(Math.round(editTransaction.amount)));
+        setTxType(editTransaction.type);
+      }
+    }
+  }, [editing, editTransaction]);
 
   const amountSlide = useSharedValue(0);
   useEffect(() => {
@@ -61,7 +132,8 @@ export function NumpadModal({ onTransactionConfirmed }: NumpadModalProps) {
     setAmount((prev) => {
       if (prev === '0') return key === '000' ? '0' : key;
       const next = prev + key;
-      return next.length > 12 ? next.slice(0, 12) : next;
+      // 10-digit cap matches PRD — enough for VND million-scale entries
+      return next.length > 10 ? next.slice(0, 10) : next;
     });
   }, []);
 
@@ -72,19 +144,74 @@ export function NumpadModal({ onTransactionConfirmed }: NumpadModalProps) {
 
   const handleConfirm = useCallback(() => {
     const value = parseInt(amount, 10) || 0;
-    if (value > 0 && activeModal) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      add(activeModal, value);
-      if (category && onTransactionConfirmed) {
-        onTransactionConfirmed(activeModal, category.positionX, category.positionY);
+
+    // Edit flow — only the amount changes; type/category are untouched.
+    if (editing) {
+      if (value > 0 && editTransaction) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        onEditConfirm?.(editTransaction.id, value);
+      }
+      onEditClose?.();
+      return;
+    }
+
+    if (value <= 0) {
+      closeModal();
+      return;
+    }
+
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    if (txType === 'income') {
+      add(INCOME_CATEGORY_ID, value, 'income');
+      // For income fireworks we fire near the top-right (income pill location).
+      // The Home screen handles positioning when it gets no source category.
+      if (onTransactionConfirmed) {
+        onTransactionConfirmed(INCOME_CATEGORY_ID, 80, 18, 'income');
+      }
+    } else if (sourceCategory) {
+      add(sourceCategory.id, value, 'expense');
+      if (onTransactionConfirmed) {
+        onTransactionConfirmed(
+          sourceCategory.id,
+          sourceCategory.positionX,
+          sourceCategory.positionY,
+          'expense',
+        );
       }
     }
     closeModal();
-  }, [amount, activeModal, add, closeModal, category, onTransactionConfirmed]);
+  }, [
+    amount,
+    editing,
+    editTransaction,
+    onEditConfirm,
+    onEditClose,
+    txType,
+    sourceCategory,
+    add,
+    closeModal,
+    onTransactionConfirmed,
+  ]);
 
   const handleCancel = useCallback(() => {
+    if (editing) {
+      onEditClose?.();
+      return;
+    }
     closeModal();
-  }, [closeModal]);
+  }, [editing, onEditClose, closeModal]);
+
+  const setExpense = useCallback(() => {
+    if (expenseDisabled) return;
+    Haptics.selectionAsync();
+    setTxType('expense');
+  }, [expenseDisabled]);
+
+  const setIncome = useCallback(() => {
+    if (incomeDisabled) return;
+    Haptics.selectionAsync();
+    setTxType('income');
+  }, [incomeDisabled]);
 
   const backdropStyle = useAnimatedStyle(() => ({
     opacity: withTiming(isOpen ? 1 : 0, { duration: TIMING.normal }),
@@ -109,6 +236,22 @@ export function NumpadModal({ onTransactionConfirmed }: NumpadModalProps) {
     resolvedTheme === 'light' ? 'rgba(255,255,255,0.72)' : 'rgba(17,17,28,0.72)';
   const confirmRim =
     resolvedTheme === 'light' ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.25)';
+  const toggleTrack =
+    resolvedTheme === 'light' ? 'rgba(13,13,20,0.06)' : 'rgba(255,255,255,0.06)';
+  const toggleActiveFill =
+    resolvedTheme === 'light' ? 'rgba(13,13,20,0.10)' : 'rgba(255,255,255,0.14)';
+  const toggleInactiveText =
+    resolvedTheme === 'light' ? 'rgba(13,13,20,0.40)' : 'rgba(255,255,255,0.35)';
+
+  const headerEmoji = txType === 'income' ? '💰' : sourceCategory?.emoji ?? '';
+  const headerLabel =
+    txType === 'income'
+      ? t('incomeLabel')
+      : sourceCategory
+        ? sourceCategory.name
+        : '';
+
+  const confirmColor = txType === 'income' ? INCOME_COLOR : colors.accent;
 
   return (
     <>
@@ -127,8 +270,56 @@ export function NumpadModal({ onTransactionConfirmed }: NumpadModalProps) {
           <View style={styles.modalSurface}>
             <View style={[styles.handle, { backgroundColor: colors.glass.borderStrong }]} />
 
+            {/* Type toggle pill */}
+            <View style={[styles.toggleTrack, { backgroundColor: toggleTrack }]}>
+              <Pressable
+                onPress={setExpense}
+                disabled={expenseDisabled}
+                style={[
+                  styles.toggleSegment,
+                  txType === 'expense' && { backgroundColor: toggleActiveFill },
+                  expenseDisabled && txType !== 'expense' && { opacity: 0.35 },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.toggleLabel,
+                    {
+                      color:
+                        txType === 'expense' ? colors.text.primary : toggleInactiveText,
+                      fontWeight: txType === 'expense' ? '700' : '600',
+                    },
+                  ]}
+                >
+                  {t('expense')}
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={setIncome}
+                disabled={incomeDisabled}
+                style={[
+                  styles.toggleSegment,
+                  txType === 'income' && { backgroundColor: toggleActiveFill },
+                  incomeDisabled && txType !== 'income' && { opacity: 0.35 },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.toggleLabel,
+                    {
+                      color:
+                        txType === 'income' ? colors.text.primary : toggleInactiveText,
+                      fontWeight: txType === 'income' ? '700' : '600',
+                    },
+                  ]}
+                >
+                  {t('income')}
+                </Text>
+              </Pressable>
+            </View>
+
             <Text style={[styles.categoryLabel, { color: colors.text.secondary }]}>
-              {category ? `${category.emoji}  ${category.name}` : ''}
+              {headerLabel ? `${headerEmoji}  ${headerLabel}` : ''}
             </Text>
 
             <Animated.View style={[styles.displayRow, amountStyle]}>
@@ -169,7 +360,7 @@ export function NumpadModal({ onTransactionConfirmed }: NumpadModalProps) {
               style={({ pressed }) => [
                 styles.confirmBtn,
                 {
-                  backgroundColor: colors.accent,
+                  backgroundColor: confirmColor,
                   borderTopColor: confirmRim,
                   opacity: isZero ? 0.35 : pressed ? 0.85 : 1,
                 },
@@ -273,11 +464,30 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginBottom: 14,
   },
+  toggleTrack: {
+    flexDirection: 'row',
+    borderRadius: 99,
+    padding: 3,
+    alignSelf: 'center',
+    marginBottom: 12,
+  },
+  toggleSegment: {
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 99,
+    minWidth: 110,
+    alignItems: 'center',
+  },
+  toggleLabel: {
+    fontSize: 12,
+    letterSpacing: 0.3,
+  },
   categoryLabel: {
     textAlign: 'center',
     fontSize: 13,
     marginBottom: 6,
     letterSpacing: 0.2,
+    minHeight: 16,
   },
   displayRow: {
     flexDirection: 'row',

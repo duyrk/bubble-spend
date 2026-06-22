@@ -1,7 +1,21 @@
-// Floating "+" button to add a new category — shows a quick-pick sheet of presets
+// Floating "+" button to add a new category. Two-step sheet:
+//   1. Preset grid (quick-pick) — or tap "Custom" to start blank
+//   2. Customise — pick an emoji + type a name, then Add
+// Color key is auto-assigned by cycling the 8 bubble colors; the 8-bubble hard
+// limit hides the whole control.
 
 import { useCallback, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
@@ -29,7 +43,18 @@ const PRESETS: { emoji: string; name: string }[] = [
   { emoji: '💄', name: 'Beauty' },
 ];
 
+// ~40 common spending icons for the custom picker.
+const EMOJIS: string[] = [
+  '🍔', '🍱', '🥤', '☕', '🍜', '🍕', '🍺', '🍰',
+  '🛒', '🛍️', '👕', '👟', '💄', '🎁', '🎮', '🎬',
+  '🎧', '📚', '✈️', '🚗', '🛵', '⛽', '🚌', '🚇',
+  '🏠', '💡', '📱', '💊', '🏥', '🐾', '💇', '🏋️',
+  '⚽', '🎵', '🧾', '💳', '🌿', '🍎', '🧴', '🎨',
+];
+
 const FAB_SIZE = 44;
+
+type Step = 'preset' | 'customize';
 
 export function AddCategorySheet() {
   const insets = useSafeAreaInsets();
@@ -40,24 +65,48 @@ export function AddCategorySheet() {
   const addCategory = useCategoryStore((s) => s.addCategory);
 
   const [open, setOpen] = useState(false);
+  const [step, setStep] = useState<Step>('preset');
+  const [emoji, setEmoji] = useState('');
+  const [name, setName] = useState('');
 
   const atLimit = categories.length >= SIZES.BUBBLES_LIMIT;
 
-  const handleAdd = useCallback(
-    (preset: { emoji: string; name: string }) => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      const colorKey = COLOR_KEYS[categories.length % COLOR_KEYS.length];
-      addCategory({
-        name: preset.name,
-        emoji: preset.emoji,
-        colorKey,
-        positionX: 30 + Math.random() * 40,
-        positionY: 35 + Math.random() * 35,
-      });
-      setOpen(false);
-    },
-    [addCategory, categories.length],
-  );
+  const close = useCallback(() => {
+    setOpen(false);
+    setStep('preset');
+    setEmoji('');
+    setName('');
+  }, []);
+
+  const pickPreset = useCallback((preset: { emoji: string; name: string }) => {
+    Haptics.selectionAsync();
+    setEmoji(preset.emoji);
+    setName(preset.name);
+    setStep('customize');
+  }, []);
+
+  const startCustom = useCallback(() => {
+    Haptics.selectionAsync();
+    // Default to a valid emoji so Add is gated only by the name (per spec).
+    setEmoji(EMOJIS[0]);
+    setName('');
+    setStep('customize');
+  }, []);
+
+  const confirmAdd = useCallback(() => {
+    const trimmed = name.trim();
+    if (!trimmed || !emoji) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const colorKey = COLOR_KEYS[categories.length % COLOR_KEYS.length];
+    addCategory({
+      name: trimmed.slice(0, 20),
+      emoji,
+      colorKey,
+      positionX: 30 + Math.random() * 40,
+      positionY: 35 + Math.random() * 35,
+    });
+    close();
+  }, [name, emoji, categories.length, addCategory, close]);
 
   if (atLimit) return null;
 
@@ -65,6 +114,8 @@ export function AddCategorySheet() {
     resolvedTheme === 'light' ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.28)';
   const sheetTint =
     resolvedTheme === 'light' ? 'rgba(255,255,255,0.82)' : 'rgba(17,17,28,0.82)';
+
+  const addDisabled = name.trim() === '';
 
   return (
     <>
@@ -74,14 +125,12 @@ export function AddCategorySheet() {
         hitSlop={8}
       >
         <View style={styles.fab}>
-          {/* Liquid Glass FAB circle — same recipe as bubbles, scaled down */}
           <GlassSurface
             borderRadius={FAB_SIZE / 2}
             intensity={28}
             shimmer={false}
             style={StyleSheet.absoluteFill}
           />
-          {/* Specular highlight arc — top sheen */}
           <View pointerEvents="none" style={styles.fabSpecularHost}>
             <LinearGradient
               colors={[fabRim, 'rgba(255,255,255,0)']}
@@ -94,9 +143,12 @@ export function AddCategorySheet() {
         </View>
       </Pressable>
 
-      <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
-        <View style={styles.backdrop}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setOpen(false)} />
+      <Modal visible={open} transparent animationType="slide" onRequestClose={close}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.backdrop}
+        >
+          <Pressable style={StyleSheet.absoluteFill} onPress={close} />
           <GlassSurface
             intensity={BLUR.sheet}
             borderRadius={20}
@@ -104,28 +156,112 @@ export function AddCategorySheet() {
             shimmer
             style={styles.sheetGlass}
           >
-            <View style={styles.sheet}>
-              <View style={[styles.handle, { backgroundColor: colors.glass.border }]} />
-              <Text style={[styles.title, { color: colors.text.primary }]}>{t('addCategory')}</Text>
-              <ScrollView contentContainerStyle={styles.grid}>
-                {PRESETS.map((p) => (
-                  <Pressable
-                    key={p.emoji}
-                    onPress={() => handleAdd(p)}
-                    style={({ pressed }) => [
-                      styles.cell,
-                      { backgroundColor: colors.glass.base, borderColor: colors.glass.border },
-                      pressed && { backgroundColor: colors.glass.borderStrong, transform: [{ scale: 0.95 }] },
-                    ]}
-                  >
-                    <Text style={styles.cellEmoji}>{p.emoji}</Text>
-                    <Text style={[styles.cellName, { color: colors.text.primary }]}>{p.name}</Text>
+            {step === 'preset' ? (
+              <View style={styles.sheet}>
+                <View style={[styles.handle, { backgroundColor: colors.glass.border }]} />
+                <View style={styles.headerRow}>
+                  <Text style={[styles.title, { color: colors.text.primary }]}>
+                    {t('addCategory')}
+                  </Text>
+                  <Pressable onPress={startCustom} hitSlop={8}>
+                    <Text style={[styles.customLink, { color: colors.accent }]}>
+                      {t('custom')} ›
+                    </Text>
                   </Pressable>
-                ))}
-              </ScrollView>
-            </View>
+                </View>
+                <ScrollView contentContainerStyle={styles.grid}>
+                  {PRESETS.map((p) => (
+                    <Pressable
+                      key={p.emoji}
+                      onPress={() => pickPreset(p)}
+                      style={({ pressed }) => [
+                        styles.cell,
+                        { backgroundColor: colors.glass.base, borderColor: colors.glass.border },
+                        pressed && { backgroundColor: colors.glass.borderStrong, transform: [{ scale: 0.95 }] },
+                      ]}
+                    >
+                      <Text style={styles.cellEmoji}>{p.emoji}</Text>
+                      <Text style={[styles.cellName, { color: colors.text.primary }]}>{p.name}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+            ) : (
+              <View style={styles.sheet}>
+                <View style={[styles.handle, { backgroundColor: colors.glass.border }]} />
+                <View style={styles.headerRow}>
+                  <Pressable onPress={() => setStep('preset')} hitSlop={8}>
+                    <Text style={[styles.backText, { color: colors.text.secondary }]}>
+                      ‹ {t('back')}
+                    </Text>
+                  </Pressable>
+                </View>
+
+                <TextInput
+                  value={name}
+                  onChangeText={setName}
+                  placeholder={t('categoryName')}
+                  placeholderTextColor={colors.text.tertiary}
+                  maxLength={20}
+                  autoFocus
+                  style={[
+                    styles.input,
+                    {
+                      color: colors.text.primary,
+                      backgroundColor: colors.glass.base,
+                      borderColor: colors.glass.border,
+                    },
+                  ]}
+                />
+
+                <Text style={[styles.sectionLabel, { color: colors.text.tertiary }]}>
+                  {t('chooseIcon')}
+                </Text>
+                <ScrollView
+                  style={styles.emojiScroll}
+                  contentContainerStyle={styles.emojiGrid}
+                  keyboardShouldPersistTaps="handled"
+                >
+                  {EMOJIS.map((e) => {
+                    const selected = e === emoji;
+                    return (
+                      <Pressable
+                        key={e}
+                        onPress={() => {
+                          Haptics.selectionAsync();
+                          setEmoji(e);
+                        }}
+                        style={[
+                          styles.emojiCell,
+                          {
+                            borderColor: selected ? colors.accent : colors.glass.border,
+                            backgroundColor: selected ? colors.glass.borderStrong : colors.glass.base,
+                          },
+                        ]}
+                      >
+                        <Text style={styles.emojiCellText}>{e}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+
+                <Pressable
+                  disabled={addDisabled}
+                  onPress={confirmAdd}
+                  style={({ pressed }) => [
+                    styles.addBtn,
+                    {
+                      backgroundColor: colors.accent,
+                      opacity: addDisabled ? 0.35 : pressed ? 0.85 : 1,
+                    },
+                  ]}
+                >
+                  <Text style={styles.addBtnText}>{t('add')}</Text>
+                </Pressable>
+              </View>
+            )}
           </GlassSurface>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </>
   );
@@ -180,7 +316,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     borderBottomLeftRadius: 0,
     borderBottomRightRadius: 0,
-    maxHeight: '70%',
+    maxHeight: '80%',
   },
   sheet: {
     padding: 16,
@@ -193,11 +329,25 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginBottom: 12,
   },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    paddingHorizontal: 4,
+    minHeight: 22,
+  },
   title: {
     fontSize: 16,
     fontWeight: '700',
-    marginBottom: 16,
-    paddingHorizontal: 4,
+  },
+  customLink: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  backText: {
+    fontSize: 15,
+    fontWeight: '600',
   },
   grid: {
     flexDirection: 'row',
@@ -219,5 +369,52 @@ const styles = StyleSheet.create({
   cellName: {
     fontSize: 11,
     fontWeight: '600',
+  },
+  input: {
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 16,
+  },
+  sectionLabel: {
+    fontSize: 11,
+    letterSpacing: 1,
+    fontWeight: '700',
+    marginBottom: 10,
+    paddingHorizontal: 4,
+  },
+  emojiScroll: {
+    maxHeight: 176,
+    marginBottom: 16,
+  },
+  emojiGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  emojiCell: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emojiCellText: {
+    fontSize: 24,
+  },
+  addBtn: {
+    borderRadius: 99,
+    paddingVertical: 15,
+    alignItems: 'center',
+  },
+  addBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
 });

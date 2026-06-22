@@ -3,13 +3,14 @@
 //
 // Layer stack (back → front):
 //   0  outer drop shadow      — wrapper shadow (unclipped)
-//   1  rim gradient ring      — diagonal white gradient, sits behind everything else
+//   1  rim gradient ring      — directional white gradient (top-left lit edge)
 //   2  inner core (inset 1.5) — clipped to circle; holds blur + tint + specular
 //        a  BlurView           (iOS frosted glass)
 //        b  glassFill wash     (also the Android fallback fill)
-//        c  bottom color bloom (the bubble's identity hue)
-//        d  top specular arc   (gyro-tracked lens flare)
-//        e  inner-top sheen    (1px refractive edge highlight)
+//        c  bottom color bloom (the bubble's identity hue, sized to size*0.40)
+//        d  primary specular   (top-left arc, gyro-tracked)
+//        e  secondary specular (bottom-right bounce, inverted gyro)
+//        f  inner-top sheen    (1px refractive edge highlight)
 //   3  content                — emoji, name, amount (sits above everything)
 
 import { memo, useEffect, useRef } from 'react';
@@ -52,8 +53,18 @@ interface BubbleItemProps {
 // Border thickness of the rim gradient ring (px)
 const RIM_WIDTH = 1.5;
 
-// How far the specular highlight shifts opposite to gyro tilt at max drift (px)
-const SPECULAR_PARALLAX = 2.5;
+// Pan must move 8px before it activates so a tap can fire first. On Android the
+// pan gesture is greedier than iOS and will steal the touch if it activates on
+// any movement — this gives Tap room to resolve at the start of the gesture.
+const PAN_MIN_DISTANCE = 8;
+
+// Hit slop for tap/longPress — Android tap targets are stricter than iOS.
+const HIT_SLOP = 10;
+
+// Highlight gyro-reactivity strength. tiltX/tiltY are clamped to ±8 in the
+// hook, so multiplying by 0.4 caps shift at ~3.2 px — perceptible but subtle.
+const PRIMARY_PARALLAX = 0.4;
+const SECONDARY_PARALLAX = 0.3;
 
 function BubbleItemImpl({ category, dragMode, index, tiltX, tiltY }: BubbleItemProps) {
   const { animatedSize } = useBubblePhysics(category.size);
@@ -66,6 +77,7 @@ function BubbleItemImpl({ category, dragMode, index, tiltX, tiltY }: BubbleItemP
 
   const openModal = useUIStore((s) => s.openModal);
   const enterDragMode = useUIStore((s) => s.enterDragMode);
+  const requestDeleteCategory = useUIStore((s) => s.requestDeleteCategory);
   const updatePosition = useCategoryStore((s) => s.updatePosition);
 
   const floatY = useSharedValue(0);
@@ -147,9 +159,13 @@ function BubbleItemImpl({ category, dragMode, index, tiltX, tiltY }: BubbleItemP
     prevTotal.current = category.total;
   }, [category.total, glowOpacity]);
 
+  // Tap and long-press composition is Exclusive (only one can win), and that
+  // pair runs Simultaneously with Pan. Pan also has a minDistance so it lets
+  // brief taps through on Android, where Pan otherwise steals the touch.
   const tap = Gesture.Tap()
     .maxDuration(GESTURE.TAP_MAX_DURATION)
     .enabled(!dragMode)
+    .hitSlop({ top: HIT_SLOP, bottom: HIT_SLOP, left: HIT_SLOP, right: HIT_SLOP })
     .onBegin(() => {
       pressScale.value = withSpring(0.94, SPRING.micro);
     })
@@ -163,13 +179,27 @@ function BubbleItemImpl({ category, dragMode, index, tiltX, tiltY }: BubbleItemP
   const longPress = Gesture.LongPress()
     .minDuration(GESTURE.DRAG_ACTIVATION_DELAY)
     .enabled(!dragMode)
+    .hitSlop({ top: HIT_SLOP, bottom: HIT_SLOP, left: HIT_SLOP, right: HIT_SLOP })
     .onStart(() => {
       runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Medium);
       runOnJS(enterDragMode)();
     });
 
+  // Long-press *while already in drag mode* requests delete. Holding still won't
+  // trip the pan (it needs movement), and any drag cancels this LongPress, so the
+  // two coexist: hold to delete, drag to reposition.
+  const longPressDelete = Gesture.LongPress()
+    .minDuration(GESTURE.DRAG_ACTIVATION_DELAY)
+    .enabled(dragMode)
+    .hitSlop({ top: HIT_SLOP, bottom: HIT_SLOP, left: HIT_SLOP, right: HIT_SLOP })
+    .onStart(() => {
+      runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Heavy);
+      runOnJS(requestDeleteCategory)(category.id);
+    });
+
   const pan = Gesture.Pan()
     .enabled(dragMode)
+    .minDistance(PAN_MIN_DISTANCE)
     .onStart(() => {
       dragStartX.value = translateX.value;
       dragStartY.value = translateY.value;
@@ -186,7 +216,10 @@ function BubbleItemImpl({ category, dragMode, index, tiltX, tiltY }: BubbleItemP
       translateY.value = 0;
     });
 
-  const gesture = Gesture.Race(pan, Gesture.Exclusive(longPress, tap));
+  const gesture = Gesture.Simultaneous(
+    Gesture.Exclusive(longPress, longPressDelete, tap),
+    pan,
+  );
 
   // Outer wrapper — drop shadow + animated size + transforms
   const wrapperStyle = useAnimatedStyle(() => {
@@ -233,13 +266,44 @@ function BubbleItemImpl({ category, dragMode, index, tiltX, tiltY }: BubbleItemP
     };
   });
 
-  // Specular highlight shifts opposite to gyro tilt — simulates a fixed overhead
-  // light source as the device tilts. (-tilt / max-drift) × parallax = px offset.
-  const specularStyle = useAnimatedStyle(() => {
-    const tx = tiltX ? -tiltX.value * (SPECULAR_PARALLAX / 8) : 0;
-    const ty = tiltY ? -tiltY.value * (SPECULAR_PARALLAX / 8) : 0;
+  // Bottom color bloom — sized to 40% of the bubble so it occupies the lower
+  // hemisphere without spilling into the highlights at the top.
+  const bloomStyle = useAnimatedStyle(() => {
+    const size = animatedSize.value;
     return {
-      transform: [{ translateX: tx }, { translateY: ty }, { rotate: '-18deg' }],
+      height: size * 0.4,
+    };
+  });
+
+  // Primary highlight (top-left arc) — shifts opposite to gyro so a fixed
+  // overhead light source reads as stationary while the bubble tilts under it.
+  const primaryStyle = useAnimatedStyle(() => {
+    const size = animatedSize.value;
+    const tx = tiltX ? -tiltX.value * PRIMARY_PARALLAX : 0;
+    const ty = tiltY ? -tiltY.value * PRIMARY_PARALLAX : 0;
+    return {
+      width: size * 0.5,
+      height: size * 0.22,
+      top: size * 0.08,
+      left: size * 0.1,
+      borderRadius: size * 0.2,
+      transform: [{ translateX: tx }, { translateY: ty }, { rotate: '-20deg' }],
+    };
+  });
+
+  // Secondary highlight (bottom-right) — simulates light bouncing off a
+  // surface beneath the bubble, so its parallax is inverted.
+  const secondaryStyle = useAnimatedStyle(() => {
+    const size = animatedSize.value;
+    const tx = tiltX ? tiltX.value * SECONDARY_PARALLAX : 0;
+    const ty = tiltY ? tiltY.value * SECONDARY_PARALLAX : 0;
+    return {
+      width: size * 0.25,
+      height: size * 0.1,
+      bottom: size * 0.12,
+      right: size * 0.1,
+      borderRadius: size * 0.12,
+      transform: [{ translateX: tx }, { translateY: ty }],
     };
   });
 
@@ -249,10 +313,16 @@ function BubbleItemImpl({ category, dragMode, index, tiltX, tiltY }: BubbleItemP
     resolvedTheme === 'light' ? 'rgba(13,13,20,0.78)' : 'rgba(255,255,255,0.78)';
   const innerTopSheen =
     resolvedTheme === 'light' ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.20)';
+  const primaryFill =
+    resolvedTheme === 'light' ? 'rgba(255,255,255,0.38)' : 'rgba(255,255,255,0.22)';
+  const secondaryFill =
+    resolvedTheme === 'light' ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.07)';
   // Android has no BlurView fallback — give the inner core a stronger base wash
   // so the bubble has visual mass against the dark background.
   const androidFallback =
     resolvedTheme === 'light' ? 'rgba(245,245,250,0.55)' : 'rgba(28,28,42,0.55)';
+  // Directional rim — bright at top-left, fading to near-invisible at bottom-right.
+  const rimFade = resolvedTheme === 'light' ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.02)';
 
   return (
     <GestureDetector gesture={gesture}>
@@ -276,16 +346,16 @@ function BubbleItemImpl({ category, dragMode, index, tiltX, tiltY }: BubbleItemP
             { shadowColor: palette.glow },
           ]}
         >
-          {/* Layer 1 — rim gradient ring (diagonal white sheen). The inner core
+          {/* Layer 1 — rim gradient ring (directional sheen). The inner core
               sits inset by RIM_WIDTH, so this only shows on the perimeter. */}
           <Animated.View
             pointerEvents="none"
             style={[StyleSheet.absoluteFill, styles.clip, rimRadiusStyle]}
           >
             <LinearGradient
-              colors={[palette.rimLight, 'rgba(255,255,255,0.04)']}
-              start={{ x: 0.2, y: 0 }}
-              end={{ x: 0.8, y: 1 }}
+              colors={[palette.rimLight, rimFade]}
+              start={{ x: 0.1, y: 0 }}
+              end={{ x: 0.9, y: 1 }}
               style={StyleSheet.absoluteFill}
             />
           </Animated.View>
@@ -313,22 +383,27 @@ function BubbleItemImpl({ category, dragMode, index, tiltX, tiltY }: BubbleItemP
               style={[StyleSheet.absoluteFill, { backgroundColor: palette.glassFill }]}
             />
 
-            <LinearGradient
-              pointerEvents="none"
-              colors={['transparent', palette.tintColor]}
-              start={{ x: 0.5, y: 0.4 }}
-              end={{ x: 0.5, y: 1 }}
-              style={StyleSheet.absoluteFill}
-            />
-
-            <Animated.View pointerEvents="none" style={[styles.specularHost, specularStyle]}>
+            {/* Bottom color bloom — sized at 40% of the bubble */}
+            <Animated.View pointerEvents="none" style={[styles.bloomHost, bloomStyle]}>
               <LinearGradient
-                colors={[palette.rimLight, 'rgba(255,255,255,0)']}
+                colors={['transparent', palette.tintColor]}
                 start={{ x: 0.5, y: 0 }}
                 end={{ x: 0.5, y: 1 }}
-                style={styles.specular}
+                style={StyleSheet.absoluteFill}
               />
             </Animated.View>
+
+            {/* Primary highlight — top-left arc, gyro-tracked */}
+            <Animated.View
+              pointerEvents="none"
+              style={[styles.highlight, primaryStyle, { backgroundColor: primaryFill }]}
+            />
+
+            {/* Secondary highlight — bottom-right bounce, opposite parallax */}
+            <Animated.View
+              pointerEvents="none"
+              style={[styles.highlight, secondaryStyle, { backgroundColor: secondaryFill }]}
+            />
 
             <View
               pointerEvents="none"
@@ -384,20 +459,14 @@ const styles = StyleSheet.create({
     right: RIM_WIDTH,
     bottom: RIM_WIDTH,
   },
-  specularHost: {
+  bloomHost: {
     position: 'absolute',
-    top: '6%',
-    left: '14%',
-    width: '58%',
-    height: '32%',
-    borderTopLeftRadius: 200,
-    borderTopRightRadius: 200,
-    borderBottomLeftRadius: 200,
-    borderBottomRightRadius: 200,
-    overflow: 'hidden',
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
-  specular: {
-    flex: 1,
+  highlight: {
+    position: 'absolute',
   },
   innerSheen: {
     position: 'absolute',

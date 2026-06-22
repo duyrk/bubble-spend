@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Localization from 'expo-localization';
+import { SUPPORTED_LOCALES } from '@/lib/i18n';
 import type { Language } from '@/lib/i18n';
 import type { CurrencyCode } from '@/lib/currency';
 
@@ -28,7 +29,9 @@ type SettingsState = {
 
 function detectDefaultLanguage(): Language {
   const locale = Localization.getLocales()[0]?.languageCode ?? 'en';
-  return locale === 'vi' ? 'vi' : 'en';
+  return (SUPPORTED_LOCALES as readonly string[]).includes(locale)
+    ? (locale as Language)
+    : 'en';
 }
 
 function detectDefaultCurrency(): CurrencyCode {

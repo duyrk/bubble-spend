@@ -7,6 +7,7 @@ import { useGyroscopeTilt } from '@/hooks/useGyroscopeTilt';
 import { useUIStore } from '@/stores/useUIStore';
 import { BubbleItem } from './BubbleItem';
 import { AddCategorySheet } from './AddCategorySheet';
+import { DeleteCategorySheet } from './DeleteCategorySheet';
 
 export function BubbleField() {
   const dragMode = useUIStore((s) => s.dragMode);
@@ -32,6 +33,7 @@ export function BubbleField() {
         ))}
       </Animated.View>
       {!dragMode && <AddCategorySheet />}
+      <DeleteCategorySheet />
     </View>
   );
 }

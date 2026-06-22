@@ -1,9 +1,12 @@
 // Zustand store for spending categories (bubbles)
 
-import { SIZES } from "@/constants/theme";
-import * as db from "@/lib/db";
-import type { Category, Transaction } from "@/types";
-import { create } from "zustand";
+import * as Localization from 'expo-localization';
+import { SIZES } from '@/constants/theme';
+import * as db from '@/lib/db';
+import { getDefaultCategories } from '@/lib/i18n/defaultCategories';
+import { INCOME_CATEGORY_ID } from '@/types';
+import type { BubbleColorKey, Category, Transaction } from '@/types';
+import { create } from 'zustand';
 
 type CategoryState = {
   categories: Category[];
@@ -11,7 +14,7 @@ type CategoryState = {
   loaded: boolean;
 
   load: () => void;
-  addCategory: (cat: Omit<Category, "id" | "createdAt">) => Category;
+  addCategory: (cat: Omit<Category, 'id' | 'createdAt'>) => Category;
   updatePosition: (id: string, x: number, y: number) => void;
   deleteCategory: (id: string) => void;
   recalcSizes: (transactions: Transaction[]) => void;
@@ -20,44 +23,6 @@ type CategoryState = {
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
 }
-
-const DEFAULT_CATEGORIES: Omit<Category, "id" | "createdAt">[] = [
-  {
-    name: "Food",
-    emoji: "🍙",
-    colorKey: "frost",
-    positionX: 30,
-    positionY: 35,
-  },
-  {
-    name: "Transport",
-    emoji: "🚃",
-    colorKey: "dusk",
-    positionX: 65,
-    positionY: 30,
-  },
-  {
-    name: "Coffee",
-    emoji: "☕",
-    colorKey: "mist",
-    positionX: 50,
-    positionY: 55,
-  },
-  {
-    name: "Shopping",
-    emoji: "🛍️",
-    colorKey: "veil",
-    positionX: 25,
-    positionY: 65,
-  },
-  {
-    name: "Bills",
-    emoji: "📄",
-    colorKey: "slate",
-    positionX: 72,
-    positionY: 60,
-  },
-];
 
 export const useCategoryStore = create<CategoryState>((set, get) => ({
   categories: [],
@@ -69,10 +34,16 @@ export const useCategoryStore = create<CategoryState>((set, get) => ({
     let categories = db.getAllCategories();
 
     if (categories.length === 0) {
+      const locale = Localization.getLocales()[0]?.languageCode ?? 'en';
+      const defaults = getDefaultCategories(locale);
       const now = Date.now();
-      categories = DEFAULT_CATEGORIES.map((c, i) => {
+      categories = defaults.map((c, i) => {
         const cat: Category = {
-          ...c,
+          name: c.name,
+          emoji: c.emoji,
+          colorKey: c.colorKey as BubbleColorKey,
+          positionX: c.positionX,
+          positionY: c.positionY,
           id: generateId() + i,
           createdAt: now + i,
         };
@@ -82,6 +53,10 @@ export const useCategoryStore = create<CategoryState>((set, get) => ({
     }
 
     set({ categories, loaded: true });
+
+    // Seed sizes so bubbles render at BUBBLE_BASE immediately. Without this,
+    // sizes is {} on first frame and BubbleItem reads 0 until transactions load.
+    get().recalcSizes([]);
   },
 
   addCategory: (partial) => {
@@ -111,13 +86,28 @@ export const useCategoryStore = create<CategoryState>((set, get) => ({
   },
 
   deleteCategory: (id) => {
+    // Cascade: drop the category row AND every transaction filed under it.
     db.deleteCategory(id);
-    set({ categories: get().categories.filter((c) => c.id !== id) });
+    db.deleteTransactionsByCategory(id);
+    set((state) => {
+      const sizes = { ...state.sizes };
+      delete sizes[id];
+      return {
+        categories: state.categories.filter((c) => c.id !== id),
+        sizes,
+      };
+    });
+    // Remaining bubbles are re-scaled against the new max by the caller, which
+    // reloads transactions → Home's recalcSizes effect fires.
   },
 
   recalcSizes: (transactions) => {
+    // Bubble size reflects spending only — income is global and must not inflate
+    // a per-category total. We also skip the reserved income categoryId defensively.
     const totals: Record<string, number> = {};
     for (const tx of transactions) {
+      if (tx.type !== 'expense') continue;
+      if (tx.categoryId === INCOME_CATEGORY_ID) continue;
       totals[tx.categoryId] = (totals[tx.categoryId] ?? 0) + tx.amount;
     }
 

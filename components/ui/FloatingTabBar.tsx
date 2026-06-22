@@ -26,8 +26,11 @@ export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarP
   const colors = useColors();
   const resolvedTheme = useResolvedTheme();
   const activeModal = useUIStore((s) => s.activeModal);
+  const numpadEditing = useUIStore((s) => s.numpadEditing);
 
-  if (activeModal !== null) return null;
+  // Hide the bar whenever any numpad sheet is up — the create flow (activeModal)
+  // or the History edit flow (numpadEditing) — so it never overlaps the sheet.
+  if (activeModal !== null || numpadEditing) return null;
 
   const surfaceTint =
     resolvedTheme === 'light' ? 'rgba(255,255,255,0.62)' : 'rgba(17,17,28,0.62)';

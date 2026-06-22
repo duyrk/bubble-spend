@@ -10,7 +10,10 @@
 
 **Period selector** — four tabs across the top: Today / Yesterday / This Week / This Month. Switching reloads transactions and recalculates bubble sizes.
 
-**Total display** — shows aggregated spend for the active period below the tab bar.
+**Summary row** — three columns directly under the period tabs:
+- **Spent** (`↓`) — total expenses for the active period (default white text)
+- **Earned** (`↑`) — total income (`#3DB882` green). Also acts as the **income entry point** — tapping the column opens the numpad in income mode.
+- **Net** — `income − expense`. Green prefix `+` when positive, red prefix `−` (`#F76C6C`) when negative.
 
 **Bubble field** — all categories rendered as frosted-glass circles floating inside a full-screen canvas. The whole field shifts with gyroscope input (parallax tilt effect).
 
@@ -20,7 +23,7 @@ Each bubble shows:
 - Spend amount for the active period — compact form (e.g. `$1.2k`, `380 ₫`) — or "tap" hint if zero
 
 **Gestures on a bubble:**
-- **Tap** (< 500 ms): opens the numpad modal for that category
+- **Tap** (< 500 ms): opens the numpad modal for that category (expense mode by default)
 - **Long press** (≥ 500 ms): enters drag mode with haptic feedback
 
 **Drag mode:**
@@ -30,15 +33,16 @@ Each bubble shows:
 - Tab-bar swipe navigation is disabled while drag mode is active
 
 **Numpad modal** — slides up from the bottom:
-- Shows category name + emoji as header
+- Type toggle pill at the top: `− Expense` | `+ Income`. Switching does not reset the typed amount.
+- Header row shows the source bubble (emoji + name) in expense mode; in income mode it shows `💰 Income` regardless of source.
 - Large amount display with currency symbol (position adapts to locale)
-- Digit keys: 1–9, 0, 000 (for zero-decimal currencies like VND)
-- Backspace key
-- "Done ✓" confirm button (accent color) — creates transaction, closes modal, triggers fireworks
+- Digit keys: 1–9, 0, 000 (for zero-decimal currencies like VND); backspace key
+- "Done ✓" confirm button — accent purple in expense mode, green (`#3DB882`) in income mode. Creates transaction, closes modal, triggers fireworks (matching color).
 - "Cancel" link at bottom
 - The floating tab bar hides automatically while the numpad is open
+- 10-digit max input
 
-**Fireworks effect** — particle burst plays from the bubble's position on transaction confirm.
+**Fireworks effect** — particle burst plays from the bubble's position on expense confirm, or from the income pill area on income confirm. Particle color is taken from the source bubble's glow / the income green respectively.
 
 **Empty state hint** — "Tap a bubble to log your first spend" displayed when no transactions exist for the period and drag mode is off.
 
@@ -50,11 +54,11 @@ Each bubble shows:
 
 Period selector tabs (same four options as Home, independent state).
 
-**Header** — shows active period label and total spend for that period.
+**Header** — three-column summary identical to Home: Spent / Earned / Net, with the same colour treatment.
 
 **Transaction list** — chronological list of all transactions in the period, grouped by date. Each row shows:
-- Category emoji + name
-- Amount (formatted per user's currency setting)
+- Category emoji + name (`💰 Income` for income rows)
+- Amount with sign — `−450,000 ₫` in white for expenses, `+1,200,000 ₫` in green for income
 - Time of transaction
 
 Empty state: "No transactions yet" + hint to go log one from Home.
@@ -65,7 +69,7 @@ Empty state: "No transactions yet" + hint to go log one from Home.
 
 **Appearance**
 - Theme: Dark / Light / System (default: Dark)
-- Language: English / Tiếng Việt (default: auto-detected from device locale)
+- Language: English / Tiếng Việt (default: auto-detected from device locale). Options derived from `SUPPORTED_LOCALES`; adding a locale requires no settings code change.
 
 **General**
 - Currency: VND / USD / EUR / GBP / JPY / KRW / SGD / THB (default: auto-detected from device region)
@@ -80,10 +84,21 @@ Empty state: "No transactions yet" + hint to go log one from Home.
 
 ---
 
+## Income Tracking
+
+- Income transactions use a reserved `categoryId = '__income__'` (exported as `INCOME_CATEGORY_ID` from `types/index.ts`)
+- Income is not tied to any bubble category
+- Income does **not** affect bubble sizes — `recalcSizes()` skips any transaction whose `type !== 'expense'` or whose `categoryId === '__income__'`
+- All transactions carry a `type: 'expense' | 'income'` field (defaults to `'expense'` for rows that existed before the migration)
+
+---
+
 ## Category Management
 
 - Max **8 categories** on screen at any time — hard limit enforced in the store
-- Default categories seeded on first launch: Food 🍙, Transport 🚃, Coffee ☕, Shopping 🛍️, Bills 📄
+- Default categories seeded on first launch (locale-aware):
+  - `vi`: Ăn uống 🍜, Grab 🛵, Cà phê ☕, Mua sắm 🛍️, Nhà ở 🏠
+  - `en`: Food 🍔, Transport 🚗, Coffee ☕, Shopping 🛍️, Housing 🏠
 - Add via preset picker (12 preset options)
 - Delete: not exposed in UI yet (store method exists)
 - Position persisted as percentage coordinates (0–100) relative to the field container

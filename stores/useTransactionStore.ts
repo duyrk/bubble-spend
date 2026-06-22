@@ -1,16 +1,26 @@
 // Zustand store for transactions with offline-first sync queue
 
 import { create } from 'zustand';
-import type { Transaction, Period, SyncQueueItem } from '@/types';
+import type { Transaction, Period, SyncQueueItem, TransactionType } from '@/types';
 import * as db from '@/lib/db';
+import { useCategoryStore } from './useCategoryStore';
 
 type TransactionState = {
   transactions: Transaction[];
   period: Period;
 
   loadByPeriod: (period: Period) => void;
-  add: (categoryId: string, amount: number, note?: string) => Transaction;
-  getTotal: () => number;
+  add: (
+    categoryId: string,
+    amount: number,
+    type: TransactionType,
+    note?: string,
+  ) => Transaction;
+  updateTransactionAmount: (id: string, amount: number) => void;
+  deleteTransaction: (id: string) => void;
+  getExpenseTotal: () => number;
+  getIncomeTotal: () => number;
+  getNetBalance: () => number;
 };
 
 function generateId(): string {
@@ -53,11 +63,12 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
     set({ transactions, period });
   },
 
-  add: (categoryId, amount, note) => {
+  add: (categoryId, amount, type, note) => {
     const tx: Transaction = {
       id: generateId(),
       categoryId,
       amount,
+      type,
       transactedAt: Date.now(),
       note,
       synced: false,
@@ -81,7 +92,42 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
     return tx;
   },
 
-  getTotal: () => {
-    return get().transactions.reduce((sum, tx) => sum + tx.amount, 0);
+  updateTransactionAmount: (id, amount) => {
+    db.updateTransactionAmount(id, amount);
+    const transactions = get().transactions.map((tx) =>
+      tx.id === id ? { ...tx, amount, synced: false } : tx,
+    );
+    set({ transactions });
+    // Editing an expense amount changes that bubble's size — re-scale all bubbles.
+    useCategoryStore.getState().recalcSizes(transactions);
+  },
+
+  deleteTransaction: (id) => {
+    db.deleteTransaction(id);
+    db.deleteSyncItemsForTransaction(id);
+    const transactions = get().transactions.filter((tx) => tx.id !== id);
+    set({ transactions });
+    useCategoryStore.getState().recalcSizes(transactions);
+  },
+
+  getExpenseTotal: () =>
+    get().transactions.reduce(
+      (sum, tx) => (tx.type === 'expense' ? sum + tx.amount : sum),
+      0,
+    ),
+  getIncomeTotal: () =>
+    get().transactions.reduce(
+      (sum, tx) => (tx.type === 'income' ? sum + tx.amount : sum),
+      0,
+    ),
+  getNetBalance: () => {
+    const { transactions } = get();
+    let income = 0;
+    let expense = 0;
+    for (const tx of transactions) {
+      if (tx.type === 'income') income += tx.amount;
+      else expense += tx.amount;
+    }
+    return income - expense;
   },
 }));

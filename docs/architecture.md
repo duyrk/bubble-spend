@@ -79,11 +79,12 @@ hooks/
   useTranslation.ts       t() keyed on settings language
 
 lib/
-  db.ts                   SQLite open/init + all query helpers
+  db.ts                   SQLite open/init + all query helpers + type column migration
   currency.ts             CurrencyMeta definitions + formatCurrency / formatCompact
   notifications.ts        Schedule/cancel daily reminder
   i18n/
-    translations.ts       English + Vietnamese string dictionaries
+    defaultCategories.ts  Locale-keyed seed categories (vi / en); exports LocaleCode
+    translations.ts       English + Vietnamese string dictionaries; derives TranslationKey from `en`
     index.ts              Re-exports
 
 constants/
@@ -119,8 +120,10 @@ Owns the in-memory transaction slice for the active period on Home.
 ```
 State:  transactions[], period
 Load:   loadByPeriod(period) → getTransactionsByPeriod(start, end) from SQLite
-Write:  add(categoryId, amount, note?) → insertTransaction() + insertSyncItem() → update memory
-Derive: getTotal() → sum of transactions[].amount
+Write:  add(categoryId, amount, type, note?) → insertTransaction() + insertSyncItem() → update memory
+Derive: getExpenseTotal()  → sum of transactions where type === 'expense'
+        getIncomeTotal()   → sum of transactions where type === 'income'
+        getNetBalance()    → income − expense
 ```
 
 History screen **does not use this store** — it queries SQLite directly via `db.getTransactionsByPeriod` on focus/period change to avoid cross-screen state coupling.
@@ -130,9 +133,16 @@ History screen **does not use this store** — it queries SQLite directly via `d
 Ephemeral UI state only. Not persisted.
 
 ```
-activeModal: string | null   — categoryId of open numpad, null when closed
+activeModal: { categoryId: string | null; defaultType: TransactionType } | null
+  — non-null whenever the numpad sheet is open
+  — categoryId === null when the entry point was the income pill
 dragMode: boolean            — bubble drag mode active
 activePeriod: Period         — selected period on Home screen
+
+Actions:
+  openModal(categoryId)        — open in expense mode for that bubble
+  openIncomeModal()            — open in income mode (no source bubble)
+  closeModal()                 — dismiss
 ```
 
 ### `useSettingsStore`
@@ -166,12 +176,15 @@ CREATE TABLE categories (
 
 CREATE TABLE transactions (
   id TEXT PRIMARY KEY,
-  category_id TEXT NOT NULL REFERENCES categories(id),
+  category_id TEXT NOT NULL,        -- references categories.id OR '__income__' for income
   amount REAL NOT NULL,
-  transacted_at INTEGER NOT NULL,  -- unix ms, set at confirm
+  type TEXT NOT NULL DEFAULT 'expense',  -- 'expense' | 'income'
+  transacted_at INTEGER NOT NULL,   -- unix ms, set at confirm
   note TEXT,
-  synced INTEGER DEFAULT 0         -- 0 = pending, 1 = synced
+  synced INTEGER DEFAULT 0          -- 0 = pending, 1 = synced
 );
+-- Pre-existing installs run `ALTER TABLE ... ADD COLUMN type ... DEFAULT 'expense'`
+-- inside initDb(), wrapped in try/catch (idempotent — throws on already-applied).
 
 CREATE TABLE sync_queue (
   id TEXT PRIMARY KEY,
@@ -190,14 +203,16 @@ All SQLite operations use `expo-sqlite` synchronous API (`execSync`, `runSync`, 
 
 ```
 User confirms amount in NumpadModal
-  → useTransactionStore.add(categoryId, amount)
+  → useTransactionStore.add(categoryId, amount, type, note?)
     → db.insertTransaction(tx)           // write to SQLite immediately
     → db.insertSyncItem(syncItem)        // enqueue for future backend sync
     → set({ transactions: [tx, ...] })   // update in-memory state
-  → onTransactionConfirmed callback
+  → onTransactionConfirmed(categoryId, x, y, type)
     → loadByPeriod(activePeriod)         // reload from SQLite (source of truth)
-    → triggerFireworks(x, y)            // visual feedback
+    → triggerFireworks(x, y, color)      // expense: bubble glow; income: green
 ```
+
+For income, `categoryId = INCOME_CATEGORY_ID ('__income__')` — a reserved sentinel that never matches a real category row, so `recalcSizes()` ignores it.
 
 Sync flush is **not yet implemented** — `getPendingSyncItems()` and `deleteSyncItem()` exist in `lib/db.ts` but nothing calls them.
 
@@ -221,16 +236,22 @@ All animations run on the UI thread via Reanimated shared values. No JS-thread `
 ## Gesture Architecture
 
 ```
-BubbleItem gesture = Race(pan, Exclusive(longPress, tap))
+BubbleItem gesture = Simultaneous(Exclusive(longPress, tap), pan)
 
 tap (< 500 ms, disabled in dragMode)       → runOnJS(openModal)(categoryId)
 longPress (≥ 500 ms, disabled in dragMode) → runOnJS(Haptics.impactAsync)() + runOnJS(enterDragMode)()
-pan (enabled only in dragMode)             → translate bubble → on end: runOnJS(updatePosition)(id, x, y)
+pan (enabled only in dragMode,             → translate bubble → on end: runOnJS(updatePosition)(id, x, y)
+     minDistance(8) so a tap can fire first
+     before pan steals the touch on Android)
 ```
+
+`tap` and `longPress` both carry an explicit `hitSlop` so the Android tap target matches the visible bubble size — without it the gesture rejects edges of small bubbles.
 
 **Important:** Reanimated 4 + Gesture Handler 2 compile all gesture callbacks as UI-thread worklets. Any call to a non-worklet function (Zustand actions, Haptics, etc.) **must** be wrapped with `runOnJS`. Calling them bare causes a Hermes C++ exception → `SIGABRT`. See `decisions.md` for rationale.
 
 Drag mode disables `tap` and `longPress` gestures. The `FloatingTabBar` hides entirely when `activeModal !== null` (numpad open), which also prevents tab-switch conflicts during amount entry.
+
+**Android composition note:** `Gesture.Race(pan, Exclusive(longPress, tap))` previously starved `tap` on Android. Reanimated 4 + Gesture Handler 2 evaluate pan more eagerly than on iOS, and an active pan inside `Race` claims the touch before tap can resolve. Switching to `Simultaneous(Exclusive(longPress, tap), pan)` plus `pan.minDistance(8)` lets the tap fire first.
 
 ---
 
@@ -258,9 +279,11 @@ Drag mode disables `tap` and `longPress` gestures. The `FloatingTabBar` hides en
 - `formatCurrency(amount, code)` — full form, e.g. `$1,234.56`
 - `formatCompact(amount, code)` — compact for bubble labels: `$1.2k`, `380`, returns `null` if zero
 
-**i18n** — `lib/i18n/translations.ts` holds `en` and `vi` dictionaries typed by `TranslationKey`. `useTranslation()` reads `language` from `useSettingsStore` and returns `t(key)`.
+**i18n** — `lib/i18n/translations.ts` holds `en` and `vi` dictionaries. `TranslationKey` is derived as `keyof typeof en`, and `vi` is typed `Record<TranslationKey, string>` — TypeScript surfaces any missing key at compile time. `useTranslation()` reads `language` from `useSettingsStore`, returns `t(key)` with an `en` fallback if the active locale lacks an entry.
 
-Language and currency default to device locale/region via `expo-localization` in `useSettingsStore` initialiser. Both can be overridden in Settings.
+**Locale-aware default categories** — `lib/i18n/defaultCategories.ts` keys an object of seed categories by `LocaleCode = keyof typeof DEFAULT_CATEGORIES`. The same type is re-exported from `lib/i18n/index.ts` and aliased to `Language` in `translations.ts`, so the entire i18n surface (language picker, translations, seed data, settings) is governed by one derived union — adding a locale in one place errors out the compiler on every gap.
+
+Language and currency default to device locale/region via `expo-localization` in `useSettingsStore` initialiser. The language detection consults `SUPPORTED_LOCALES`; unrecognised locales fall back to `en`. Both settings can be overridden in Settings.
 
 ---
 

@@ -11,6 +11,8 @@ interface TransactionListProps {
   categories: Category[];
   emptyTitle: string;
   emptyHint?: string;
+  onDelete: (id: string) => void;
+  onEditAmount: (tx: Transaction) => void;
 }
 
 type DateGroup = {
@@ -42,6 +44,8 @@ export function TransactionList({
   categories,
   emptyTitle,
   emptyHint,
+  onDelete,
+  onEditAmount,
 }: TransactionListProps) {
   const colors = useColors();
   const resolvedTheme = useResolvedTheme();
@@ -86,6 +90,8 @@ export function TransactionList({
                 transaction={tx}
                 category={categoryMap.get(tx.categoryId)}
                 index={cumulativeIndex}
+                onDelete={onDelete}
+                onEditAmount={onEditAmount}
               />
             );
             cumulativeIndex += 1;

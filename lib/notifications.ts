@@ -2,7 +2,6 @@
 
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
-import { TRANSLATIONS } from '@/lib/i18n';
 import type { Language } from '@/lib/i18n';
 
 const REMINDER_ID = 'bubble-spend-daily-reminder';

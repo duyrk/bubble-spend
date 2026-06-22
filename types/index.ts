@@ -12,6 +12,12 @@ export type BubbleColorKey =
   | 'veil'
   | 'smoke';
 
+export type TransactionType = 'expense' | 'income';
+
+// Reserved categoryId for income transactions. Income is global (not per-bubble),
+// so it never matches a real category row — recalcSizes naturally ignores it.
+export const INCOME_CATEGORY_ID = '__income__';
+
 export type Category = {
   id: string;
   name: string;
@@ -31,6 +37,7 @@ export type Transaction = {
   id: string;
   categoryId: string;
   amount: number;
+  type: TransactionType;
   transactedAt: number; // unix ms — auto set at confirm
   note?: string;
   synced: boolean;
@@ -43,3 +50,5 @@ export type SyncQueueItem = {
   payload: string; // JSON
   createdAt: number;
 };
+
+export type { LocaleCode } from '@/lib/i18n/defaultCategories';

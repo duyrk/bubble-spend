@@ -2,3 +2,5 @@
 
 export { TRANSLATIONS, LANGUAGES } from './translations';
 export type { Language, TranslationKey } from './translations';
+export { getDefaultCategories, SUPPORTED_LOCALES } from './defaultCategories';
+export type { LocaleCode } from './defaultCategories';

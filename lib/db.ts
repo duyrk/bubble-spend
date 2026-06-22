@@ -2,7 +2,7 @@
 
 import * as SQLite from 'expo-sqlite';
 import { DB_NAME } from '@/constants/config';
-import type { Category, Transaction, SyncQueueItem } from '@/types';
+import type { Category, Transaction, SyncQueueItem, TransactionType } from '@/types';
 
 let _db: SQLite.SQLiteDatabase | null = null;
 
@@ -33,12 +33,21 @@ export function initDb(): void {
       id TEXT PRIMARY KEY,
       category_id TEXT NOT NULL,
       amount REAL NOT NULL,
+      type TEXT NOT NULL DEFAULT 'expense',
       transacted_at INTEGER NOT NULL,
       note TEXT,
       synced INTEGER DEFAULT 0,
       FOREIGN KEY (category_id) REFERENCES categories(id)
     );
   `);
+
+  // Idempotent column migration for installs that pre-date the `type` column.
+  // SQLite throws if the column already exists — that's expected; swallow it.
+  try {
+    db.execSync(`ALTER TABLE transactions ADD COLUMN type TEXT NOT NULL DEFAULT 'expense';`);
+  } catch {
+    // column already present
+  }
 
   db.execSync(`
     CREATE TABLE IF NOT EXISTS sync_queue (
@@ -102,6 +111,7 @@ export function getTransactionsByPeriod(startMs: number, endMs: number): Transac
     id: string;
     category_id: string;
     amount: number;
+    type: string | null;
     transacted_at: number;
     note: string | null;
     synced: number;
@@ -114,6 +124,7 @@ export function getTransactionsByPeriod(startMs: number, endMs: number): Transac
     id: r.id,
     categoryId: r.category_id,
     amount: r.amount,
+    type: (r.type === 'income' ? 'income' : 'expense') as TransactionType,
     transactedAt: r.transacted_at,
     note: r.note ?? undefined,
     synced: r.synced === 1,
@@ -123,9 +134,25 @@ export function getTransactionsByPeriod(startMs: number, endMs: number): Transac
 export function insertTransaction(tx: Transaction): void {
   const db = getDb();
   db.runSync(
-    'INSERT INTO transactions (id, category_id, amount, transacted_at, note, synced) VALUES (?, ?, ?, ?, ?, ?)',
-    [tx.id, tx.categoryId, tx.amount, tx.transactedAt, tx.note ?? null, tx.synced ? 1 : 0],
+    'INSERT INTO transactions (id, category_id, amount, type, transacted_at, note, synced) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [tx.id, tx.categoryId, tx.amount, tx.type, tx.transactedAt, tx.note ?? null, tx.synced ? 1 : 0],
   );
+}
+
+export function updateTransactionAmount(id: string, amount: number): void {
+  const db = getDb();
+  // synced → 0 marks the row dirty so a future sync flush re-sends it.
+  db.runSync('UPDATE transactions SET amount = ?, synced = 0 WHERE id = ?', [amount, id]);
+}
+
+export function deleteTransaction(id: string): void {
+  const db = getDb();
+  db.runSync('DELETE FROM transactions WHERE id = ?', [id]);
+}
+
+export function deleteTransactionsByCategory(categoryId: string): void {
+  const db = getDb();
+  db.runSync('DELETE FROM transactions WHERE category_id = ?', [categoryId]);
 }
 
 // --- Sync queue ---
@@ -160,4 +187,25 @@ export function getPendingSyncItems(): SyncQueueItem[] {
 export function deleteSyncItem(id: string): void {
   const db = getDb();
   db.runSync('DELETE FROM sync_queue WHERE id = ?', [id]);
+}
+
+// Best-effort removal of any pending sync entries that reference a transaction —
+// e.g. its original CREATE row — when that transaction is deleted locally before
+// it was ever flushed. The sync_queue id differs from the entity id, so we match
+// on the payload's embedded id.
+export function deleteSyncItemsForTransaction(txId: string): void {
+  const db = getDb();
+  const rows = db.getAllSync<{ id: string; payload: string }>(
+    "SELECT id, payload FROM sync_queue WHERE entity = 'transaction'",
+  );
+  for (const r of rows) {
+    try {
+      const parsed = JSON.parse(r.payload) as { id?: string };
+      if (parsed.id === txId) {
+        db.runSync('DELETE FROM sync_queue WHERE id = ?', [r.id]);
+      }
+    } catch {
+      // malformed payload — leave it for the sync layer to deal with
+    }
+  }
 }

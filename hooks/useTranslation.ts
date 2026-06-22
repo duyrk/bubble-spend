@@ -9,7 +9,8 @@ export function useTranslation() {
   const language = useSettingsStore((s) => s.language);
 
   const t = useCallback(
-    (key: TranslationKey): string => TRANSLATIONS[language][key] ?? key,
+    (key: TranslationKey): string =>
+      TRANSLATIONS[language]?.[key] ?? TRANSLATIONS.en[key] ?? key,
     [language],
   );
 

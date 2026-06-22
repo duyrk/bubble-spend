@@ -184,6 +184,58 @@ Color keys (`frost`, `mist`, `dusk`, `slate`, `ash`, `haze`, `veil`, `smoke`) ar
 
 ### Accent color: `#7c6af7`
 
-Used for the confirm button, active period tab indicator, and the notification toggle. Same in both dark and light themes.
+Used for the confirm button (expense), active period tab indicator, and the notification toggle. Same in both dark and light themes.
 
 **Why:** A single accent creates visual cohesion. The purple-violet hue sits well against both dark (#0D0D14) and light (#F4F3F8) backgrounds at sufficient contrast.
+
+### Income semantic color: `#3DB882`, deficit: `#F76C6C`
+
+Income amounts, income confirm button, income fireworks, and positive net balance use `#3DB882`. Negative net balance uses `#F76C6C`.
+
+**Why:** Money in versus money out needs to be readable at a glance without reading the prefix. Green for inflow and red for deficit are conventional and survive both light and dark themes without re-tuning.
+
+---
+
+## Income & Expense
+
+### Income transactions use the reserved `categoryId = '__income__'`
+
+Stored as `INCOME_CATEGORY_ID` in `types/index.ts`. The constant is not added to the `categories` table.
+
+**Why:** Income has no bubble — it's global, not per-category. A reserved ID keeps the transaction model uniform (one table, one query path) and avoids a schema split. The string is sentinel-style (`__double_underscore__`) so it cannot collide with a generated category ID.
+
+### `Transaction.type` defaults to `'expense'` in SQLite
+
+`ALTER TABLE transactions ADD COLUMN type TEXT NOT NULL DEFAULT 'expense'` is run idempotently in `initDb()` for installs that pre-date the column.
+
+**Why:** Existing transactions had no type. Defaulting to `'expense'` preserves backward compatibility without a destructive migration — pre-existing rows continue to behave correctly and show up in the spend total.
+
+### Bubble size reflects expense-only totals
+
+`recalcSizes()` filters transactions to `type === 'expense'` before summing per-category totals.
+
+**Why:** Income inflating bubble size would make the visual meaningless — a large bubble would no longer reliably signal "you're spending a lot here." Income is a global counter shown in the summary row, not a per-bubble property.
+
+### Income entry point lives in the summary row, not on a bubble
+
+Tapping the "Earned" column on the Home screen opens the numpad in income mode.
+
+**Why:** The bubble field is for *spending*. Hanging an income bubble next to a bubble like "Coffee" would conflate inflows and outflows visually. Keeping income on the summary row puts it adjacent to the running total — the place users naturally look to see where the day stands.
+
+---
+
+## i18n
+
+### `LocaleCode` and `TranslationKey` are derived types
+
+`LocaleCode = keyof typeof DEFAULT_CATEGORIES` in `lib/i18n/defaultCategories.ts`.
+`TranslationKey = keyof typeof en` in `lib/i18n/translations.ts`.
+The Vietnamese dictionary is typed `Record<TranslationKey, string>` so a missing key is a compile error.
+
+**Why:** Manual unions require updating multiple files in sync. Derived types (`keyof typeof`) make the compiler enforce completeness — adding a locale in one place makes TypeScript error on every place that needs to add a label or translation. The same pattern guards `LANGUAGE_META: Record<LocaleCode, ...>`.
+
+### Default categories are locale-keyed, not translation-keyed
+
+Seed categories live in `DEFAULT_CATEGORIES` keyed by `LocaleCode`. A separate `getDefaultCategories(locale)` returns the right list with an `en` fallback.
+
+**Why:** Seed categories are *first-time setup data*, not runtime strings. They're written once into SQLite when the categories table is empty and never re-read. Coupling them to the live `t()` translation would mean the stored category name would silently re-render when the user switches language — confusing, since the user may have personalised it. Locale-keyed seeding keeps the database stable.

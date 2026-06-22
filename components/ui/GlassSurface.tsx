@@ -35,7 +35,10 @@ export function GlassSurface({
   const resolvedTheme = useResolvedTheme();
   const effectiveTint: BlurTint = tint ?? resolvedTheme;
   const effectiveBorder = borderColor ?? colors.glass.border;
-  const androidFallback = surfaceTint ?? (resolvedTheme === 'light' ? 'rgba(255,255,255,0.72)' : 'rgba(20,19,35,0.85)');
+  // Android has no reliable BlurView fallback in Expo managed workflow
+  // (windowIsTranslucent not set), so we render a near-opaque solid fill.
+  // iOS uses surfaceTint as a translucent wash on top of native BlurView.
+  const androidFallback = surfaceTint ?? (resolvedTheme === 'light' ? 'rgba(245,245,250,0.94)' : 'rgba(20,19,35,0.92)');
   const radiusStyle = { borderRadius };
 
   const shimmerNode = shimmer ? (
