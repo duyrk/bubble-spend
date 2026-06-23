@@ -17,7 +17,6 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useColors, useResolvedTheme } from '@/hooks/useTheme';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -110,8 +109,6 @@ export function AddCategorySheet() {
 
   if (atLimit) return null;
 
-  const fabRim =
-    resolvedTheme === 'light' ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.28)';
   const sheetTint =
     resolvedTheme === 'light' ? 'rgba(255,255,255,0.82)' : 'rgba(17,17,28,0.82)';
 
@@ -131,14 +128,6 @@ export function AddCategorySheet() {
             shimmer={false}
             style={StyleSheet.absoluteFill}
           />
-          <View pointerEvents="none" style={styles.fabSpecularHost}>
-            <LinearGradient
-              colors={[fabRim, 'rgba(255,255,255,0)']}
-              start={{ x: 0.5, y: 0 }}
-              end={{ x: 0.5, y: 1 }}
-              style={styles.fabSpecular}
-            />
-          </View>
           <Text style={[styles.fabIcon, { color: colors.text.secondary }]}>+</Text>
         </View>
       </Pressable>
@@ -287,19 +276,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-  },
-  fabSpecularHost: {
-    position: 'absolute',
-    top: 3,
-    left: 7,
-    width: 30,
-    height: 14,
-    borderRadius: 14,
-    overflow: 'hidden',
-    transform: [{ rotate: '-18deg' }],
-  },
-  fabSpecular: {
-    flex: 1,
   },
   fabIcon: {
     fontSize: 24,

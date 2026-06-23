@@ -176,7 +176,7 @@ Every transaction write: SQLite → sync_queue → update in-memory state. No ne
 - **Gesture threshold:** tap < 500ms → open numpad | long press ≥ 500ms → enter drag mode
 - **Drag mode:** pan gesture enabled, tap/longPress disabled, tab swipe disabled
 - **Tab bar hides when numpad is open** — `FloatingTabBar` returns `null` when `activeModal !== null`
-- **Timestamps:** always `Date.now()` at confirm — never ask user for date/time
+- **Timestamps:** default to `Date.now()`; the create numpad has a date pill → calendar for backdating (resets to Today on open, future days disabled). Backdated entries stamp the chosen day at the current wall-clock time. History edit flow stays amount-only.
 - **Position stored as percentage (0–100)** — not absolute px, survives device/rotation changes
 - **History screen reads SQLite directly** — does not use `useTransactionStore`
 - **Float animation seeded from position** — `floatDuration = 2800 + (positionX * 30) % 800`, `floatAmplitude = 4 + (positionY * 0.03) % 3`

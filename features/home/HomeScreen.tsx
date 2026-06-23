@@ -1,6 +1,6 @@
 // Home screen — period tabs, summary row, bubble field, numpad, fireworks, empty hint
 
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, View, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBubbleColors, useColors } from '@/hooks/useTheme';
@@ -10,6 +10,7 @@ import { useTransactionStore } from '@/stores/useTransactionStore';
 import { useCategoryStore } from '@/stores/useCategoryStore';
 import { BubbleField } from '@/features/bubble/BubbleField';
 import { AmbientBloom } from '@/components/ui/AmbientBloom';
+import { UndoToast } from '@/components/ui/UndoToast';
 import { NumpadModal } from '@/features/numpad/NumpadModal';
 import { FireworksOverlay } from '@/features/effects/Fireworks';
 import { useFireworks } from '@/features/effects/useFireworks';
@@ -33,14 +34,13 @@ export function HomeScreen() {
   const openIncomeModal = useUIStore((s) => s.openIncomeModal);
   const loadByPeriod = useTransactionStore((s) => s.loadByPeriod);
   const transactions = useTransactionStore((s) => s.transactions);
-  const getExpenseTotal = useTransactionStore((s) => s.getExpenseTotal);
-  const getIncomeTotal = useTransactionStore((s) => s.getIncomeTotal);
-  const getNetBalance = useTransactionStore((s) => s.getNetBalance);
+  const deleteTransaction = useTransactionStore((s) => s.deleteTransaction);
   const recalcSizes = useCategoryStore((s) => s.recalcSizes);
   const categories = useCategoryStore((s) => s.categories);
   const loaded = useCategoryStore((s) => s.loaded);
 
   const { particles, trigger: triggerFireworks } = useFireworks();
+  const [pendingUndoId, setPendingUndoId] = useState<string | null>(null);
 
   useEffect(() => {
     if (loaded) {
@@ -53,8 +53,9 @@ export function HomeScreen() {
   }, [transactions, recalcSizes]);
 
   const handleTransactionConfirmed = useCallback(
-    (categoryId: string, x: number, y: number, type: TransactionType) => {
+    (categoryId: string, x: number, y: number, type: TransactionType, txId: string) => {
       loadByPeriod(activePeriod);
+      setPendingUndoId(txId);
       if (type === 'income') {
         setTimeout(() => triggerFireworks(x, y, INCOME_GLOW), 80);
         return;
@@ -66,9 +67,29 @@ export function HomeScreen() {
     [activePeriod, bubbleColors, categories, loadByPeriod, triggerFireworks],
   );
 
-  const expenseTotal = getExpenseTotal();
-  const incomeTotal = getIncomeTotal();
-  const netBalance = getNetBalance();
+  const dismissUndo = useCallback(() => setPendingUndoId(null), []);
+
+  const handleUndo = useCallback(() => {
+    // deleteTransaction drops the row, re-scales bubbles, and updates the store
+    // transactions this screen reads from — no reload needed.
+    if (pendingUndoId) {
+      deleteTransaction(pendingUndoId);
+    }
+    setPendingUndoId(null);
+  }, [pendingUndoId, deleteTransaction]);
+
+  // Derive totals from the subscribed `transactions` (same source the bubbles'
+  // recalcSizes uses) rather than calling store getters that read get() during
+  // render — the latter tears on cold start, showing 0 until a re-render.
+  const { expenseTotal, incomeTotal, netBalance } = useMemo(() => {
+    let exp = 0;
+    let inc = 0;
+    for (const tx of transactions) {
+      if (tx.type === 'income') inc += tx.amount;
+      else exp += tx.amount;
+    }
+    return { expenseTotal: exp, incomeTotal: inc, netBalance: inc - exp };
+  }, [transactions]);
   const isEmpty = transactions.length === 0;
 
   return (
@@ -105,6 +126,8 @@ export function HomeScreen() {
 
       <NumpadModal onTransactionConfirmed={handleTransactionConfirmed} />
       <FireworksOverlay particles={particles} />
+
+      <UndoToast id={pendingUndoId} onUndo={handleUndo} onDismiss={dismissUndo} />
 
       <OnboardingOverlay />
     </View>

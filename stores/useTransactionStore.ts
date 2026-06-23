@@ -15,6 +15,7 @@ type TransactionState = {
     amount: number,
     type: TransactionType,
     note?: string,
+    transactedAt?: number,
   ) => Transaction;
   updateTransactionAmount: (id: string, amount: number) => void;
   deleteTransaction: (id: string) => void;
@@ -63,13 +64,13 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
     set({ transactions, period });
   },
 
-  add: (categoryId, amount, type, note) => {
+  add: (categoryId, amount, type, note, transactedAt) => {
     const tx: Transaction = {
       id: generateId(),
       categoryId,
       amount,
       type,
-      transactedAt: Date.now(),
+      transactedAt: transactedAt ?? Date.now(),
       note,
       synced: false,
     };

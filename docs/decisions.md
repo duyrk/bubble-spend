@@ -52,11 +52,19 @@ While `dragMode === true`, the horizontal pan gesture is owned by bubbles, not t
 
 ---
 
-### No date/time input — always `Date.now()` at confirm
+### Timestamps default to `Date.now()`; backdating is opt-in
 
-Transaction `transactedAt` is set at the moment the user presses confirm on the numpad.
+Transaction `transactedAt` defaults to the moment the user presses confirm. The create numpad also has a date pill (📅 Today) that opens a calendar for picking any past day — the pill always resets to **Today** when the sheet opens, so the fast path is unchanged. A backdated entry is stamped at the chosen day + the current wall-clock time (so it sorts naturally within that day); picking today yields exactly `Date.now()`.
 
-**Why:** Asking for date/time adds friction to every entry. The primary use case is logging expenses as they happen. Backdating can be addressed later if demand exists.
+**Why:** Logging as-you-spend stays a zero-friction default, but "I forgot to log yesterday" was the most common real gap. The picker is JS-only (`components/ui/Calendar.tsx`, names from `lib/i18n/dates.ts`) to avoid a native date-picker dependency and Hermes `Intl` flakiness. The History **edit** flow remains amount-only for now — changing an existing transaction's date is not yet supported.
+
+---
+
+### Home summary totals are derived with `useMemo`, not store getters
+
+`HomeScreen` computes Spent/Earned/Net with a `useMemo` over the subscribed `transactions` array — it does **not** call `useTransactionStore`'s `getExpenseTotal()/getIncomeTotal()/getNetBalance()` during render.
+
+**Why:** Those getters read `get().transactions` live at call time. On a cold start the first data load (the async `loadByPeriod` effect) updates the store, but a getter invoked during render can read a snapshot inconsistent with the subscribed selector — so the summary rendered `0` on launch until some later re-render. Verified on-device: `transactions.length === 2` while `getExpenseTotal()` returned `0`, even though `recalcSizes` over the same data sized the bubble to 75k. Deriving the totals from the subscribed `transactions` value (the same source the bubbles use) keeps the summary and bubbles consistent on first paint. `HistoryScreen` already follows this pattern.
 
 ---
 

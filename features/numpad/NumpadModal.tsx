@@ -20,6 +20,8 @@ import { useTransactionStore } from '@/stores/useTransactionStore';
 import * as db from '@/lib/db';
 import { BLUR, RADII, SPRING, TIMING } from '@/constants/theme';
 import { GlassSurface } from '@/components/ui/GlassSurface';
+import { Calendar } from '@/components/ui/Calendar';
+import { formatShortDate, isSameDay } from '@/lib/i18n';
 import {
   INCOME_CATEGORY_ID,
   type TransactionType,
@@ -30,6 +32,21 @@ import {
 const MODAL_HEIGHT = 560;
 const INCOME_COLOR = '#3DB882';
 
+// Stamp a backdated entry at the current wall-clock time on the chosen day so it
+// lands in the right day bucket and sorts naturally; today → exactly now.
+function timestampFor(date: Date): number {
+  const now = new Date();
+  if (isSameDay(date, now)) return now.getTime();
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+    now.getHours(),
+    now.getMinutes(),
+    now.getSeconds(),
+  ).getTime();
+}
+
 interface NumpadModalProps {
   // Create flow (Home) — driven by the global UI store.
   onTransactionConfirmed?: (
@@ -37,6 +54,7 @@ interface NumpadModalProps {
     x: number,
     y: number,
     type: TransactionType,
+    txId: string,
   ) => void;
   // Edit flow (History) — when `editMode` is true the modal ignores the global
   // UI store entirely and is driven by these props. Only the amount is editable;
@@ -58,7 +76,7 @@ export function NumpadModal({
   onEditClose,
   onEditConfirm,
 }: NumpadModalProps) {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const { meta, format } = useFormatCurrency();
   const colors = useColors();
   const resolvedTheme = useResolvedTheme();
@@ -73,6 +91,9 @@ export function NumpadModal({
   const [amount, setAmount] = useState('0');
   const [txType, setTxType] = useState<TransactionType>('expense');
   const [recentAmounts, setRecentAmounts] = useState<number[]>([]);
+  // Backdating (create flow only) — defaults to today every time the sheet opens.
+  const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
+  const [showCalendar, setShowCalendar] = useState(false);
 
   // Open/close + source context resolve from either the edit props (History) or
   // the global store (create flow, Home). A given instance is driven by exactly
@@ -112,6 +133,8 @@ export function NumpadModal({
       if (activeModal !== null) {
         setAmount('0');
         setTxType(activeModal.defaultType);
+        setSelectedDate(new Date());
+        setShowCalendar(false);
       }
     }
   }, [activeModal, editing]);
@@ -186,21 +209,23 @@ export function NumpadModal({
     }
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    const at = timestampFor(selectedDate);
     if (txType === 'income') {
-      add(INCOME_CATEGORY_ID, value, 'income');
+      const tx = add(INCOME_CATEGORY_ID, value, 'income', undefined, at);
       // For income fireworks we fire near the top-right (income pill location).
       // The Home screen handles positioning when it gets no source category.
       if (onTransactionConfirmed) {
-        onTransactionConfirmed(INCOME_CATEGORY_ID, 80, 18, 'income');
+        onTransactionConfirmed(INCOME_CATEGORY_ID, 80, 18, 'income', tx.id);
       }
     } else if (sourceCategory) {
-      add(sourceCategory.id, value, 'expense');
+      const tx = add(sourceCategory.id, value, 'expense', undefined, at);
       if (onTransactionConfirmed) {
         onTransactionConfirmed(
           sourceCategory.id,
           sourceCategory.positionX,
           sourceCategory.positionY,
           'expense',
+          tx.id,
         );
       }
     }
@@ -213,6 +238,7 @@ export function NumpadModal({
     onEditClose,
     txType,
     sourceCategory,
+    selectedDate,
     add,
     closeModal,
     onTransactionConfirmed,
@@ -277,6 +303,19 @@ export function NumpadModal({
         : '';
 
   const confirmColor = txType === 'income' ? INCOME_COLOR : colors.accent;
+
+  // Date pill label — "Today"/"Yesterday" for the common cases, else a short date.
+  const todayDate = new Date();
+  const yesterdayDate = new Date(
+    todayDate.getFullYear(),
+    todayDate.getMonth(),
+    todayDate.getDate() - 1,
+  );
+  const dateLabel = isSameDay(selectedDate, todayDate)
+    ? t('today')
+    : isSameDay(selectedDate, yesterdayDate)
+      ? t('yesterday')
+      : formatShortDate(selectedDate, language);
 
   return (
     <>
@@ -346,6 +385,23 @@ export function NumpadModal({
             <Text style={[styles.categoryLabel, { color: colors.text.secondary }]}>
               {headerLabel ? `${headerEmoji}  ${headerLabel}` : ''}
             </Text>
+
+            {!editing ? (
+              <Pressable
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setShowCalendar(true);
+                }}
+                style={[
+                  styles.datePill,
+                  { backgroundColor: colors.glass.base, borderColor: colors.glass.border },
+                ]}
+              >
+                <Text style={[styles.datePillText, { color: colors.text.secondary }]}>
+                  📅  {dateLabel}
+                </Text>
+              </Pressable>
+            ) : null}
 
             <Animated.View style={[styles.displayRow, amountStyle]}>
               {meta.symbolBefore ? (
@@ -425,6 +481,31 @@ export function NumpadModal({
           </View>
         </GlassSurface>
       </Animated.View>
+
+      {showCalendar ? (
+        <View style={styles.calendarOverlay}>
+          <Pressable
+            style={[StyleSheet.absoluteFill, styles.calendarBackdrop]}
+            onPress={() => setShowCalendar(false)}
+          />
+          <GlassSurface
+            intensity={BLUR.sheet}
+            borderRadius={RADII.sheet}
+            surfaceTint={sheetTint}
+            shimmer
+            style={styles.calendarCard}
+          >
+            <Calendar
+              selected={selectedDate}
+              language={language}
+              onSelect={(d) => {
+                setSelectedDate(d);
+                setShowCalendar(false);
+              }}
+            />
+          </GlassSurface>
+        </View>
+      ) : null}
     </>
   );
 }
@@ -536,6 +617,36 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     letterSpacing: 0.2,
     minHeight: 16,
+  },
+  datePill: {
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 99,
+    borderWidth: 0.5,
+    marginBottom: 14,
+  },
+  datePillText: {
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+  },
+  calendarOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  calendarBackdrop: {
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  calendarCard: {
+    width: '100%',
+    maxWidth: 360,
+    padding: 16,
   },
   displayRow: {
     flexDirection: 'row',

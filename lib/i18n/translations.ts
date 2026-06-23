@@ -102,6 +102,10 @@ const en = {
 
   // Numpad — recent amounts
   recentAmounts: 'Recent',
+
+  // Undo toast
+  logged: 'Logged',
+  undo: 'Undo',
 } as const;
 
 export type TranslationKey = keyof typeof en;
@@ -180,6 +184,9 @@ const vi: Record<TranslationKey, string> = {
   onboardingCta: 'Đã hiểu',
 
   recentAmounts: 'Gần đây',
+
+  logged: 'Đã ghi',
+  undo: 'Hoàn tác',
 };
 
 export const TRANSLATIONS: Record<Language, Record<TranslationKey, string>> = { en, vi };

@@ -35,6 +35,7 @@ Each bubble shows:
 **Numpad modal** — slides up from the bottom:
 - Type toggle pill at the top: `− Expense` | `+ Income`. Switching does not reset the typed amount.
 - Header row shows the source bubble (emoji + name) in expense mode; in income mode it shows `💰 Income` regardless of source.
+- **Date pill** (`📅 Today`) under the header — tap to open a calendar and pick any past day to backdate the entry. Resets to Today each time the sheet opens; future days are disabled. Hidden while editing an existing transaction.
 - Large amount display with currency symbol (position adapts to locale)
 - Digit keys: 1–9, 0, 000 (for zero-decimal currencies like VND); backspace key
 - **Recent amount chips** — up to 3 of the most recent distinct amounts for that bubble (or for income) appear above the keypad; tap one to fill the amount instantly. Updated each time the sheet opens; hidden while editing an existing transaction.
@@ -124,6 +125,8 @@ Empty state: "No transactions yet" + hint to go log one from Home.
 - Edit a transaction's amount (tap the amount in History) and delete it (swipe the row)
 - First-launch onboarding overlay (wires up `hasCompletedOnboarding`)
 - Recent-amount quick chips on the numpad
+- Backdating new transactions via a JS-only calendar date picker on the numpad
+- Undo toast on Home immediately after logging a transaction
 
 ## Not Yet Implemented
 
