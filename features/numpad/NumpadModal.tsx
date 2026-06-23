@@ -17,6 +17,7 @@ import { useColors, useResolvedTheme } from '@/hooks/useTheme';
 import { useUIStore } from '@/stores/useUIStore';
 import { useCategoryStore } from '@/stores/useCategoryStore';
 import { useTransactionStore } from '@/stores/useTransactionStore';
+import * as db from '@/lib/db';
 import { BLUR, RADII, SPRING, TIMING } from '@/constants/theme';
 import { GlassSurface } from '@/components/ui/GlassSurface';
 import {
@@ -26,7 +27,7 @@ import {
   type Category,
 } from '@/types';
 
-const MODAL_HEIGHT = 520;
+const MODAL_HEIGHT = 560;
 const INCOME_COLOR = '#3DB882';
 
 interface NumpadModalProps {
@@ -58,7 +59,7 @@ export function NumpadModal({
   onEditConfirm,
 }: NumpadModalProps) {
   const { t } = useTranslation();
-  const { meta } = useFormatCurrency();
+  const { meta, format } = useFormatCurrency();
   const colors = useColors();
   const resolvedTheme = useResolvedTheme();
 
@@ -71,6 +72,7 @@ export function NumpadModal({
 
   const [amount, setAmount] = useState('0');
   const [txType, setTxType] = useState<TransactionType>('expense');
+  const [recentAmounts, setRecentAmounts] = useState<number[]>([]);
 
   // Open/close + source context resolve from either the edit props (History) or
   // the global store (create flow, Home). A given instance is driven by exactly
@@ -88,6 +90,14 @@ export function NumpadModal({
   // (no source bubble to flip back to).
   const expenseDisabled = editing ? true : createSourceId === null;
   const incomeDisabled = editing;
+
+  // Source bucket for the "recent amount" chips: the tapped category for an
+  // expense, the global income bucket for income, none while editing.
+  const recentSourceId = editing
+    ? null
+    : txType === 'income'
+      ? INCOME_CATEGORY_ID
+      : sourceCategory?.id ?? null;
 
   // Reset amount + type each time the create modal is (re)opened. Switching the
   // type *while* open keeps the typed amount; that's handled by setTxType below.
@@ -121,6 +131,16 @@ export function NumpadModal({
     }
   }, [editing, editTransaction]);
 
+  // Refresh recent-amount chips whenever the sheet opens or the source/type
+  // changes. The SQLite read is synchronous and cheap (small scan window).
+  useEffect(() => {
+    if (!isOpen || recentSourceId === null) {
+      setRecentAmounts([]);
+      return;
+    }
+    setRecentAmounts(db.getRecentAmounts(recentSourceId, txType, 3));
+  }, [isOpen, recentSourceId, txType]);
+
   const amountSlide = useSharedValue(0);
   useEffect(() => {
     amountSlide.value = -4;
@@ -140,6 +160,11 @@ export function NumpadModal({
   const handleDelete = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setAmount((prev) => (prev.length <= 1 ? '0' : prev.slice(0, -1)));
+  }, []);
+
+  const applyRecent = useCallback((value: number) => {
+    Haptics.selectionAsync();
+    setAmount(String(value));
   }, []);
 
   const handleConfirm = useCallback(() => {
@@ -344,6 +369,29 @@ export function NumpadModal({
               ) : null}
             </Animated.View>
 
+            {recentAmounts.length > 0 ? (
+              <View style={styles.recentRow}>
+                {recentAmounts.map((value) => (
+                  <Pressable
+                    key={value}
+                    onPress={() => applyRecent(value)}
+                    style={({ pressed }) => [
+                      styles.recentChip,
+                      { backgroundColor: colors.glass.base, borderColor: colors.glass.border },
+                      pressed && { backgroundColor: colors.glass.borderStrong },
+                    ]}
+                  >
+                    <Text
+                      style={[styles.recentChipText, { color: colors.text.secondary }]}
+                      numberOfLines={1}
+                    >
+                      {format(value)}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
+
             <View style={styles.numpad}>
               {KEYS.map((key) => (
                 <NumpadKey key={key} label={key} onPress={() => handleKey(key)} />
@@ -504,6 +552,24 @@ const styles = StyleSheet.create({
     fontSize: 52,
     fontWeight: '200',
     letterSpacing: -1.5,
+  },
+  recentRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 16,
+    minHeight: 34,
+  },
+  recentChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 99,
+    borderWidth: 0.5,
+    maxWidth: '33%',
+  },
+  recentChipText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   numpad: {
     flexDirection: 'row',

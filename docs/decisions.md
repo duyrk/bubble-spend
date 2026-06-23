@@ -69,6 +69,22 @@ Transaction `transactedAt` is set at the moment the user presses confirm on the 
 
 ---
 
+### Onboarding shown once, gated on storage hydration
+
+The first-launch coach overlay (`OnboardingOverlay`) renders only when `_hasHydrated && !hasCompletedOnboarding`. `_hasHydrated` is a transient settings flag flipped in the persist `onRehydrateStorage` callback; `hasCompletedOnboarding` is persisted and set on dismiss.
+
+**Why:** `hasCompletedOnboarding` defaults to `false` and AsyncStorage rehydrates asynchronously, so a returning user's first frame would briefly read `false` and flash the overlay. Gating on a hydration flag defers the decision until the real value is loaded. `partialize` keeps `_hasHydrated` out of storage so it can never be persisted as `true`.
+
+---
+
+### Recent-amount chips re-query on open, not on every render
+
+`NumpadModal` loads `db.getRecentAmounts(sourceId, type, 3)` in an effect keyed on `isOpen`, the source bucket, and the transaction type — never inline in render.
+
+**Why:** A synchronous SQLite read on every render would be wasteful and could interleave with typing. Re-querying only when the sheet opens (or the user flips expense/income) keeps the chips fresh after new entries without a per-keystroke cost. Amounts are de-duplicated and capped at 3 so the row never wraps; chips are suppressed in edit mode, where the amount is already pre-filled.
+
+---
+
 ## Data
 
 ### Offline-first: SQLite write before any network

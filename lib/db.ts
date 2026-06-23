@@ -131,6 +131,32 @@ export function getTransactionsByPeriod(startMs: number, endMs: number): Transac
   }));
 }
 
+// Most-recent distinct amounts logged for a category (expense) or the income
+// bucket — powers the one-tap "recent amount" chips in the numpad. We over-fetch
+// a small window and de-duplicate in JS so the chips stay distinct.
+export function getRecentAmounts(
+  categoryId: string,
+  type: TransactionType,
+  limit = 3,
+): number[] {
+  const db = getDb();
+  const rows = db.getAllSync<{ amount: number }>(
+    'SELECT amount FROM transactions WHERE category_id = ? AND type = ? ORDER BY transacted_at DESC LIMIT 50',
+    [categoryId, type],
+  );
+
+  const seen = new Set<number>();
+  const out: number[] = [];
+  for (const r of rows) {
+    const amount = Math.round(r.amount);
+    if (amount <= 0 || seen.has(amount)) continue;
+    seen.add(amount);
+    out.push(amount);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
 export function insertTransaction(tx: Transaction): void {
   const db = getDb();
   db.runSync(

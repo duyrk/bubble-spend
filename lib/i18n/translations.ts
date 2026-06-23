@@ -86,6 +86,22 @@ const en = {
   delete: 'Delete',
   deleteCategoryTitle: 'Delete this category?',
   deleteCategoryBody: 'All of its transactions will be permanently deleted too.',
+
+  // Onboarding
+  onboardingTitle: 'Welcome to Bubble Spend',
+  onboardingSubtitle: 'A few gestures to get you going',
+  onboardingTapTitle: 'Tap to log',
+  onboardingTapDesc: 'Tap any bubble to record a spend on it.',
+  onboardingHoldTitle: 'Hold to rearrange',
+  onboardingHoldDesc: 'Press and hold a bubble, then drag it anywhere.',
+  onboardingDeleteTitle: 'Hold again to remove',
+  onboardingDeleteDesc: 'While rearranging, hold a bubble to delete it.',
+  onboardingIncomeTitle: 'Log income',
+  onboardingIncomeDesc: 'Tap "Earned" at the top to add money in.',
+  onboardingCta: 'Got it',
+
+  // Numpad — recent amounts
+  recentAmounts: 'Recent',
 } as const;
 
 export type TranslationKey = keyof typeof en;
@@ -150,6 +166,20 @@ const vi: Record<TranslationKey, string> = {
   delete: 'Xoá',
   deleteCategoryTitle: 'Xoá danh mục này?',
   deleteCategoryBody: 'Tất cả giao dịch của danh mục cũng sẽ bị xoá vĩnh viễn.',
+
+  onboardingTitle: 'Chào mừng đến Bubble Spend',
+  onboardingSubtitle: 'Vài thao tác để bắt đầu',
+  onboardingTapTitle: 'Chạm để ghi',
+  onboardingTapDesc: 'Chạm vào một bubble để ghi một khoản chi.',
+  onboardingHoldTitle: 'Giữ để sắp xếp',
+  onboardingHoldDesc: 'Nhấn giữ một bubble rồi kéo tới vị trí bất kỳ.',
+  onboardingDeleteTitle: 'Giữ lần nữa để xoá',
+  onboardingDeleteDesc: 'Khi đang sắp xếp, giữ một bubble để xoá nó.',
+  onboardingIncomeTitle: 'Ghi thu nhập',
+  onboardingIncomeDesc: 'Chạm "Thu nhập" ở trên cùng để thêm tiền vào.',
+  onboardingCta: 'Đã hiểu',
+
+  recentAmounts: 'Gần đây',
 };
 
 export const TRANSLATIONS: Record<Language, Record<TranslationKey, string>> = { en, vi };

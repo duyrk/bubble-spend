@@ -37,6 +37,7 @@ Each bubble shows:
 - Header row shows the source bubble (emoji + name) in expense mode; in income mode it shows `💰 Income` regardless of source.
 - Large amount display with currency symbol (position adapts to locale)
 - Digit keys: 1–9, 0, 000 (for zero-decimal currencies like VND); backspace key
+- **Recent amount chips** — up to 3 of the most recent distinct amounts for that bubble (or for income) appear above the keypad; tap one to fill the amount instantly. Updated each time the sheet opens; hidden while editing an existing transaction.
 - "Done ✓" confirm button — accent purple in expense mode, green (`#3DB882`) in income mode. Creates transaction, closes modal, triggers fireworks (matching color).
 - "Cancel" link at bottom
 - The floating tab bar hides automatically while the numpad is open
@@ -46,7 +47,9 @@ Each bubble shows:
 
 **Empty state hint** — "Tap a bubble to log your first spend" displayed when no transactions exist for the period and drag mode is off.
 
-**Add category button** — floating "+" above the tab bar in the bottom-right corner (hidden at 8-bubble limit). Opens a bottom sheet with 12 preset emoji/name combinations. Color key is auto-assigned by cycling through the 8 bubble colors.
+**Add category button** — floating "+" above the tab bar in the bottom-right corner (hidden at 8-bubble limit). Opens a bottom sheet with 12 preset emoji/name combinations, plus a **Custom** option to type a name and pick from ~40 icons. Color key is auto-assigned by cycling through the 8 bubble colors.
+
+**Onboarding (first launch)** — a one-time coaching overlay introduces the non-obvious gestures: tap to log, hold to rearrange, hold-again-while-rearranging to remove, and the "Earned" income entry point. Dismissed with "Got it". Gated on the persisted `hasCompletedOnboarding` flag and shown only after settings hydrate, so returning users never see a flash.
 
 ---
 
@@ -99,8 +102,8 @@ Empty state: "No transactions yet" + hint to go log one from Home.
 - Default categories seeded on first launch (locale-aware):
   - `vi`: Ăn uống 🍜, Grab 🛵, Cà phê ☕, Mua sắm 🛍️, Nhà ở 🏠
   - `en`: Food 🍔, Transport 🚗, Coffee ☕, Shopping 🛍️, Housing 🏠
-- Add via preset picker (12 preset options)
-- Delete: not exposed in UI yet (store method exists)
+- Add via preset picker (12 presets) or a custom name + icon (~40 icons)
+- Delete: long-press a bubble in drag mode → confirmation sheet (cascades to delete its transactions)
 - Position persisted as percentage coordinates (0–100) relative to the field container
 
 ---
@@ -114,11 +117,18 @@ Empty state: "No transactions yet" + hint to go log one from Home.
 
 ---
 
+## Implemented since the original spec
+
+- Custom category name / emoji input (preset grid + a Custom step)
+- Category deletion UI (long-press in drag mode → confirmation sheet)
+- Edit a transaction's amount (tap the amount in History) and delete it (swipe the row)
+- First-launch onboarding overlay (wires up `hasCompletedOnboarding`)
+- Recent-amount quick chips on the numpad
+
 ## Not Yet Implemented
 
-- Custom category name / emoji input (only presets supported)
-- Category deletion UI
-- Edit / delete existing transactions
 - Backend API integration (sync queue writes but never flushes)
-- Onboarding flow (`hasCompletedOnboarding` flag exists in settings store)
 - FolderBubble grouping (component scaffolded, not wired)
+- Editing a transaction's date/time, note, category, or type (only the amount is editable today)
+- Per-category budgets / spending caps
+- A "smarter" daily reminder (skip if already logged today, surface today's running total) — doing this reliably needs background tasks or the backend; today's reminder is a fixed daily nudge

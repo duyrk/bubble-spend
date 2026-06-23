@@ -1,17 +1,20 @@
-// Single bubble — multi-layer Liquid Glass sphere, gyro-aware specular tracking.
+// Single bubble — multi-layer Liquid Glass sphere.
 // Gestures/store logic preserved; the visual stack inside the bubble is new.
 //
+// The bubble view itself (size×size, centered on its position) is the gesture
+// target, so a tap anywhere on the visible bubble registers. (It used to hang
+// off a 0×0 anchor, so only the dead-center ~20px was tappable.)
+//
 // Layer stack (back → front):
-//   0  outer drop shadow      — wrapper shadow (unclipped)
-//   1  rim gradient ring      — directional white gradient (top-left lit edge)
-//   2  inner core (inset 1.5) — clipped to circle; holds blur + tint + specular
-//        a  BlurView           (iOS frosted glass)
-//        b  glassFill wash     (also the Android fallback fill)
-//        c  bottom color bloom (the bubble's identity hue, sized to size*0.40)
-//        d  primary specular   (top-left arc, gyro-tracked)
-//        e  secondary specular (bottom-right bounce, inverted gyro)
-//        f  inner-top sheen    (1px refractive edge highlight)
-//   3  content                — emoji, name, amount (sits above everything)
+//   0  drop shadow + glow halo — wrapper shadow + centered glow ring (pulses on confirm)
+//   1  rim gradient ring        — directional white gradient (top-left lit edge)
+//   2  inner core (inset 1.5)   — clipped to circle; holds blur + tint + gloss
+//        a  BlurView            (iOS frosted glass) / solid fallback (Android)
+//        b  glassFill wash       (base tint over the blur)
+//        c  bottom color bloom   (the bubble's identity hue, sized to size*0.40)
+//        d  top sheen            (diffuse overhead gloss, white→transparent)
+//        e  inner-top sheen      (1px refractive edge highlight)
+//   3  content                  — emoji, name, amount (sits above everything)
 
 import { memo, useEffect, useRef } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
@@ -28,7 +31,6 @@ import Animated, {
   Easing,
   cancelAnimation,
   runOnJS,
-  type SharedValue,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
@@ -46,8 +48,6 @@ interface BubbleItemProps {
   category: CategoryWithSize;
   dragMode: boolean;
   index: number;
-  tiltX?: SharedValue<number>;
-  tiltY?: SharedValue<number>;
 }
 
 // Border thickness of the rim gradient ring (px)
@@ -61,12 +61,10 @@ const PAN_MIN_DISTANCE = 8;
 // Hit slop for tap/longPress — Android tap targets are stricter than iOS.
 const HIT_SLOP = 10;
 
-// Highlight gyro-reactivity strength. tiltX/tiltY are clamped to ±8 in the
-// hook, so multiplying by 0.4 caps shift at ~3.2 px — perceptible but subtle.
-const PRIMARY_PARALLAX = 0.4;
-const SECONDARY_PARALLAX = 0.3;
+// Extra diameter of the glow halo beyond the bubble (px), split evenly each side.
+const GLOW_SPREAD = 28;
 
-function BubbleItemImpl({ category, dragMode, index, tiltX, tiltY }: BubbleItemProps) {
+function BubbleItemImpl({ category, dragMode, index }: BubbleItemProps) {
   const { animatedSize } = useBubblePhysics(category.size);
   const bubbleColors = useBubbleColors();
   const palette = bubbleColors[category.colorKey];
@@ -221,7 +219,9 @@ function BubbleItemImpl({ category, dragMode, index, tiltX, tiltY }: BubbleItemP
     pan,
   );
 
-  // Outer wrapper — drop shadow + animated size + transforms
+  // Bubble view — positioned by left/top %, centered via negative margins, and
+  // carrying the drop shadow + every transform. This is the gesture target, so
+  // its size must match the visible circle for the whole bubble to be tappable.
   const wrapperStyle = useAnimatedStyle(() => {
     const size = animatedSize.value;
     return {
@@ -240,15 +240,16 @@ function BubbleItemImpl({ category, dragMode, index, tiltX, tiltY }: BubbleItemP
     };
   });
 
+  // Glow halo — larger than the bubble and centered inside it (offset = -spread/2).
   const glowRingStyle = useAnimatedStyle(() => {
     const size = animatedSize.value;
-    const ringSize = size + 28;
+    const ringSize = size + GLOW_SPREAD;
     return {
       width: ringSize,
       height: ringSize,
       borderRadius: ringSize / 2,
-      marginLeft: -ringSize / 2,
-      marginTop: -ringSize / 2,
+      top: -GLOW_SPREAD / 2,
+      left: -GLOW_SPREAD / 2,
       opacity: glowOpacity.value,
     };
   });
@@ -267,43 +268,11 @@ function BubbleItemImpl({ category, dragMode, index, tiltX, tiltY }: BubbleItemP
   });
 
   // Bottom color bloom — sized to 40% of the bubble so it occupies the lower
-  // hemisphere without spilling into the highlights at the top.
+  // hemisphere without spilling into the gloss at the top.
   const bloomStyle = useAnimatedStyle(() => {
     const size = animatedSize.value;
     return {
       height: size * 0.4,
-    };
-  });
-
-  // Primary highlight (top-left arc) — shifts opposite to gyro so a fixed
-  // overhead light source reads as stationary while the bubble tilts under it.
-  const primaryStyle = useAnimatedStyle(() => {
-    const size = animatedSize.value;
-    const tx = tiltX ? -tiltX.value * PRIMARY_PARALLAX : 0;
-    const ty = tiltY ? -tiltY.value * PRIMARY_PARALLAX : 0;
-    return {
-      width: size * 0.5,
-      height: size * 0.22,
-      top: size * 0.08,
-      left: size * 0.1,
-      borderRadius: size * 0.2,
-      transform: [{ translateX: tx }, { translateY: ty }, { rotate: '-20deg' }],
-    };
-  });
-
-  // Secondary highlight (bottom-right) — simulates light bouncing off a
-  // surface beneath the bubble, so its parallax is inverted.
-  const secondaryStyle = useAnimatedStyle(() => {
-    const size = animatedSize.value;
-    const tx = tiltX ? tiltX.value * SECONDARY_PARALLAX : 0;
-    const ty = tiltY ? tiltY.value * SECONDARY_PARALLAX : 0;
-    return {
-      width: size * 0.25,
-      height: size * 0.1,
-      bottom: size * 0.12,
-      right: size * 0.1,
-      borderRadius: size * 0.12,
-      transform: [{ translateX: tx }, { translateY: ty }],
     };
   });
 
@@ -313,10 +282,10 @@ function BubbleItemImpl({ category, dragMode, index, tiltX, tiltY }: BubbleItemP
     resolvedTheme === 'light' ? 'rgba(13,13,20,0.78)' : 'rgba(255,255,255,0.78)';
   const innerTopSheen =
     resolvedTheme === 'light' ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.20)';
-  const primaryFill =
-    resolvedTheme === 'light' ? 'rgba(255,255,255,0.38)' : 'rgba(255,255,255,0.22)';
-  const secondaryFill =
-    resolvedTheme === 'light' ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.07)';
+  // Diffuse overhead gloss — a soft white dome fading down the top half. Reads as
+  // light from above instead of the pasted-on oval the old specular layers gave.
+  const topSheen =
+    resolvedTheme === 'light' ? 'rgba(255,255,255,0.20)' : 'rgba(255,255,255,0.10)';
   // Android has no BlurView fallback — give the inner core a stronger base wash
   // so the bubble has visual mass against the dark background.
   const androidFallback =
@@ -328,101 +297,92 @@ function BubbleItemImpl({ category, dragMode, index, tiltX, tiltY }: BubbleItemP
     <GestureDetector gesture={gesture}>
       <Animated.View
         style={[
-          styles.positionWrapper,
+          styles.bubble,
           { left: `${category.positionX}%`, top: `${category.positionY}%` },
+          wrapperStyle,
+          { shadowColor: palette.glow },
         ]}
       >
-        {/* Layer 0a — pulsing outer glow on transaction confirm */}
+        {/* Layer 0 — pulsing glow halo, centered behind the bubble */}
         <Animated.View
           pointerEvents="none"
           style={[styles.glowRing, glowRingStyle, { backgroundColor: palette.glow }]}
         />
 
-        {/* Bubble wrapper — owns drop shadow + transforms */}
+        {/* Layer 1 — rim gradient ring (directional sheen). The inner core
+            sits inset by RIM_WIDTH, so this only shows on the perimeter. */}
         <Animated.View
-          style={[
-            styles.bubble,
-            wrapperStyle,
-            { shadowColor: palette.glow },
-          ]}
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, styles.clip, rimRadiusStyle]}
         >
-          {/* Layer 1 — rim gradient ring (directional sheen). The inner core
-              sits inset by RIM_WIDTH, so this only shows on the perimeter. */}
-          <Animated.View
+          <LinearGradient
+            colors={[palette.rimLight, rimFade]}
+            start={{ x: 0.1, y: 0 }}
+            end={{ x: 0.9, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
+
+        {/* Layer 2 — inner core: blur + tint + gloss, clipped & inset */}
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.innerCore, styles.clip, innerCoreStyle]}
+        >
+          {Platform.OS === 'ios' ? (
+            <BlurView
+              intensity={BLUR.bubble}
+              tint={resolvedTheme}
+              style={StyleSheet.absoluteFill}
+            />
+          ) : (
+            <View
+              pointerEvents="none"
+              style={[StyleSheet.absoluteFill, { backgroundColor: androidFallback }]}
+            />
+          )}
+
+          <View
             pointerEvents="none"
-            style={[StyleSheet.absoluteFill, styles.clip, rimRadiusStyle]}
-          >
+            style={[StyleSheet.absoluteFill, { backgroundColor: palette.glassFill }]}
+          />
+
+          {/* Bottom color bloom — sized at 40% of the bubble */}
+          <Animated.View pointerEvents="none" style={[styles.bloomHost, bloomStyle]}>
             <LinearGradient
-              colors={[palette.rimLight, rimFade]}
-              start={{ x: 0.1, y: 0 }}
-              end={{ x: 0.9, y: 1 }}
+              colors={['transparent', palette.tintColor]}
+              start={{ x: 0.5, y: 0 }}
+              end={{ x: 0.5, y: 1 }}
               style={StyleSheet.absoluteFill}
             />
           </Animated.View>
 
-          {/* Layer 2 — inner core: blur + tint + specular, clipped & inset */}
-          <Animated.View
+          {/* Top sheen — soft overhead gloss across the upper half */}
+          <View pointerEvents="none" style={styles.topSheen}>
+            <LinearGradient
+              colors={[topSheen, 'transparent']}
+              start={{ x: 0.5, y: 0 }}
+              end={{ x: 0.5, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+          </View>
+
+          <View
             pointerEvents="none"
-            style={[styles.innerCore, styles.clip, innerCoreStyle]}
-          >
-            {Platform.OS === 'ios' ? (
-              <BlurView
-                intensity={BLUR.bubble}
-                tint={resolvedTheme}
-                style={StyleSheet.absoluteFill}
-              />
-            ) : (
-              <View
-                pointerEvents="none"
-                style={[StyleSheet.absoluteFill, { backgroundColor: androidFallback }]}
-              />
-            )}
-
-            <View
-              pointerEvents="none"
-              style={[StyleSheet.absoluteFill, { backgroundColor: palette.glassFill }]}
-            />
-
-            {/* Bottom color bloom — sized at 40% of the bubble */}
-            <Animated.View pointerEvents="none" style={[styles.bloomHost, bloomStyle]}>
-              <LinearGradient
-                colors={['transparent', palette.tintColor]}
-                start={{ x: 0.5, y: 0 }}
-                end={{ x: 0.5, y: 1 }}
-                style={StyleSheet.absoluteFill}
-              />
-            </Animated.View>
-
-            {/* Primary highlight — top-left arc, gyro-tracked */}
-            <Animated.View
-              pointerEvents="none"
-              style={[styles.highlight, primaryStyle, { backgroundColor: primaryFill }]}
-            />
-
-            {/* Secondary highlight — bottom-right bounce, opposite parallax */}
-            <Animated.View
-              pointerEvents="none"
-              style={[styles.highlight, secondaryStyle, { backgroundColor: secondaryFill }]}
-            />
-
-            <View
-              pointerEvents="none"
-              style={[styles.innerSheen, { backgroundColor: innerTopSheen }]}
-            />
-          </Animated.View>
-
-          {/* Layer 3 — content */}
-          <Text style={styles.emoji}>{category.emoji}</Text>
-          <Text style={[styles.name, { color: nameColor }]}>{category.name}</Text>
-          <Text
-            style={[
-              amountStr ? styles.amount : styles.amountEmpty,
-              { color: amountStr ? colors.text.primary : colors.text.tertiary },
-            ]}
-          >
-            {amountStr ?? t('tap')}
-          </Text>
+            style={[styles.innerSheen, { backgroundColor: innerTopSheen }]}
+          />
         </Animated.View>
+
+        {/* Layer 3 — content */}
+        <Text style={styles.emoji}>{category.emoji}</Text>
+        <Text style={[styles.name, { color: nameColor }]}>{category.name}</Text>
+        <Text
+          style={[
+            amountStr ? styles.amount : styles.amountEmpty,
+            { color: amountStr ? colors.text.primary : colors.text.tertiary },
+          ]}
+        >
+          {amountStr ?? t('tap')}
+        </Text>
       </Animated.View>
     </GestureDetector>
   );
@@ -431,9 +391,6 @@ function BubbleItemImpl({ category, dragMode, index, tiltX, tiltY }: BubbleItemP
 export const BubbleItem = memo(BubbleItemImpl);
 
 const styles = StyleSheet.create({
-  positionWrapper: {
-    position: 'absolute',
-  },
   glowRing: {
     position: 'absolute',
     shadowOffset: { width: 0, height: 0 },
@@ -465,8 +422,12 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
   },
-  highlight: {
+  topSheen: {
     position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '52%',
   },
   innerSheen: {
     position: 'absolute',

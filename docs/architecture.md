@@ -41,7 +41,8 @@ features/
   bubble/
     BubbleField.tsx       Positions all bubbles + gyro tilt wrapper
     BubbleItem.tsx        Single bubble — gestures, float/wobble animations
-    AddCategorySheet.tsx  FAB "+" button + preset picker bottom sheet
+    AddCategorySheet.tsx  FAB "+" button + preset/custom category bottom sheet
+    DeleteCategorySheet.tsx  Confirm sheet — long-press a bubble in drag mode to delete
     FolderBubble.tsx      (scaffolded, not wired)
     useBubblePhysics.ts   Spring animation for bubble size changes
     useDragGesture.ts     Drag gesture helpers (used internally)
@@ -50,11 +51,13 @@ features/
     PeriodBar.tsx         Period selector tabs (Today/Yesterday/Week/Month)
     TotalDisplay.tsx      Aggregated spend display for active period
   numpad/
-    NumpadModal.tsx       Bottom-sheet numpad for entering amounts
+    NumpadModal.tsx       Bottom-sheet numpad — amount entry, expense/income toggle, recent-amount chips
     AmountDisplay.tsx     Amount display sub-component
   effects/
     Fireworks.tsx         Particle burst overlay
     useFireworks.ts       Fireworks particle state controller
+  onboarding/
+    OnboardingOverlay.tsx First-launch coach overlay (gestures + income tip)
   timeline/
     HistoryScreen.tsx     History screen
     TransactionList.tsx   Scrollable list with date grouping
@@ -79,7 +82,7 @@ hooks/
   useTranslation.ts       t() keyed on settings language
 
 lib/
-  db.ts                   SQLite open/init + all query helpers + type column migration
+  db.ts                   SQLite open/init + all query helpers (incl. getRecentAmounts) + type column migration
   currency.ts             CurrencyMeta definitions + formatCurrency / formatCompact
   notifications.ts        Schedule/cancel daily reminder
   i18n/
@@ -157,7 +160,10 @@ notificationsEnabled: boolean                       default: false
 reminderHour: number (0–23)                         default: 21
 reminderMinute: number (0–59)                       default: 0
 hasCompletedOnboarding: boolean                     default: false
+_hasHydrated: boolean (transient — never persisted) default: false
 ```
+
+`partialize` persists only the seven real settings; `onRehydrateStorage` flips `_hasHydrated` once AsyncStorage has loaded, so first-paint logic (the onboarding overlay) waits for the real flag instead of acting on defaults.
 
 ---
 
@@ -310,6 +316,14 @@ Language and currency default to device locale/region via `expo-localization` in
 - `cancelDailyReminder()` — cancels by fixed identifier `bubble-spend-daily-reminder`
 
 Notification content is localised (EN/VI) in `REMINDER_BODY`. The Settings screen re-schedules automatically when language or reminder time changes while notifications are enabled.
+
+---
+
+## Onboarding & Quick Entry
+
+**Onboarding** — `features/onboarding/OnboardingOverlay.tsx` is a one-time `Modal` mounted in `HomeScreen`. It shows when `_hasHydrated && !hasCompletedOnboarding` (both from `useSettingsStore`), introduces the four non-obvious interactions (tap-to-log, hold-to-drag, hold-again-to-delete, the "Earned" income tap), and calls `completeOnboarding()` on dismiss. Gating on `_hasHydrated` avoids a flash for returning users before AsyncStorage rehydrates.
+
+**Recent-amount chips** — `NumpadModal` queries `db.getRecentAmounts(sourceId, type, 3)` whenever the sheet opens (or the source/type changes) and renders up to three one-tap chips of the most recent distinct amounts. Source is the tapped category for expenses or `INCOME_CATEGORY_ID` for income; chips are suppressed while editing an existing transaction. The DB helper over-fetches a small window and de-duplicates in JS to keep chips distinct.
 
 ---
 

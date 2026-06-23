@@ -18,6 +18,9 @@ type SettingsState = {
   reminderHour: number; // 0-23
   reminderMinute: number; // 0-59
   hasCompletedOnboarding: boolean;
+  // Transient (never persisted): true once AsyncStorage has rehydrated. Gates
+  // first-paint logic like the onboarding overlay so it doesn't act on defaults.
+  _hasHydrated: boolean;
 
   setTheme: (theme: ThemeMode) => void;
   setLanguage: (lang: Language) => void;
@@ -25,6 +28,7 @@ type SettingsState = {
   setNotificationsEnabled: (enabled: boolean) => void;
   setReminderTime: (hour: number, minute: number) => void;
   completeOnboarding: () => void;
+  setHasHydrated: (hydrated: boolean) => void;
 };
 
 function detectDefaultLanguage(): Language {
@@ -65,6 +69,7 @@ export const useSettingsStore = create<SettingsState>()(
       reminderHour: 21,
       reminderMinute: 0,
       hasCompletedOnboarding: false,
+      _hasHydrated: false,
 
       setTheme: (theme) => set({ theme }),
       setLanguage: (language) => set({ language }),
@@ -72,10 +77,26 @@ export const useSettingsStore = create<SettingsState>()(
       setNotificationsEnabled: (notificationsEnabled) => set({ notificationsEnabled }),
       setReminderTime: (reminderHour, reminderMinute) => set({ reminderHour, reminderMinute }),
       completeOnboarding: () => set({ hasCompletedOnboarding: true }),
+      setHasHydrated: (hydrated) => set({ _hasHydrated: hydrated }),
     }),
     {
       name: 'bubble-spend-settings',
       storage: createJSONStorage(() => AsyncStorage),
+      // Persist only real settings — never the transient hydration flag.
+      partialize: (s) => ({
+        theme: s.theme,
+        language: s.language,
+        currency: s.currency,
+        notificationsEnabled: s.notificationsEnabled,
+        reminderHour: s.reminderHour,
+        reminderMinute: s.reminderMinute,
+        hasCompletedOnboarding: s.hasCompletedOnboarding,
+      }),
+      // Flip the gate once AsyncStorage has loaded so the onboarding overlay
+      // doesn't flash for returning users before their flag is read back.
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true);
+      },
     },
   ),
 );

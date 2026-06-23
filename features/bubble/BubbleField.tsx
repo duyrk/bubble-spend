@@ -27,8 +27,6 @@ export function BubbleField() {
             category={cat}
             index={index}
             dragMode={dragMode}
-            tiltX={tiltX}
-            tiltY={tiltY}
           />
         ))}
       </Animated.View>

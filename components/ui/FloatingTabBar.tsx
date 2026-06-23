@@ -1,8 +1,9 @@
 // Custom floating Liquid Glass tab bar — replaces the default Expo Router tab bar.
 // Pill-shaped GlassSurface, accent dot indicator, icon scale bounce on tab change.
 
-import { useEffect } from 'react';
+import { useEffect, type ComponentProps } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import Feather from '@expo/vector-icons/Feather';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   useAnimatedStyle,
@@ -15,10 +16,12 @@ import { useUIStore } from '@/stores/useUIStore';
 import { BLUR, RADII, SPRING } from '@/constants/theme';
 import { GlassSurface } from '@/components/ui/GlassSurface';
 
-const TAB_ICONS: Record<string, string> = {
-  index: '⬡',
-  history: '☰',
-  settings: '◎',
+type FeatherIconName = ComponentProps<typeof Feather>['name'];
+
+const TAB_ICONS: Record<string, FeatherIconName> = {
+  index: 'hexagon',
+  history: 'list',
+  settings: 'settings',
 };
 
 export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
@@ -32,8 +35,10 @@ export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarP
   // or the History edit flow (numpadEditing) — so it never overlaps the sheet.
   if (activeModal !== null || numpadEditing) return null;
 
+  // Kept translucent enough that the blur reads through — a near-opaque tint
+  // flattens the glass into a plain milky pill.
   const surfaceTint =
-    resolvedTheme === 'light' ? 'rgba(255,255,255,0.62)' : 'rgba(17,17,28,0.62)';
+    resolvedTheme === 'light' ? 'rgba(255,255,255,0.45)' : 'rgba(17,17,28,0.45)';
   const rimColor =
     resolvedTheme === 'light' ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.18)';
   const inactiveIcon =
@@ -75,7 +80,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarP
             return (
               <TabButton
                 key={route.key}
-                icon={TAB_ICONS[route.name] ?? '•'}
+                icon={TAB_ICONS[route.name] ?? 'circle'}
                 label={label}
                 focused={isFocused}
                 onPress={onPress}
@@ -92,7 +97,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarP
 }
 
 interface TabButtonProps {
-  icon: string;
+  icon: FeatherIconName;
   label: string;
   focused: boolean;
   onPress: () => void;
@@ -126,11 +131,13 @@ function TabButton({
 
   return (
     <Pressable onPress={onPress} style={styles.tab} hitSlop={6}>
-      <Animated.Text
-        style={[styles.icon, iconStyle, { color: focused ? activeColor : inactiveIconColor }]}
-      >
-        {icon}
-      </Animated.Text>
+      <Animated.View style={[styles.icon, iconStyle]}>
+        <Feather
+          name={icon}
+          size={20}
+          color={focused ? activeColor : inactiveIconColor}
+        />
+      </Animated.View>
       <Text style={[styles.label, { color: focused ? activeColor : inactiveLabelColor }]}>
         {label}
       </Text>
@@ -154,9 +161,9 @@ const styles = StyleSheet.create({
   },
   barWrapper: {
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.45,
-    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22,
+    shadowRadius: 18,
     elevation: 8,
   },
   rim: {
@@ -181,9 +188,7 @@ const styles = StyleSheet.create({
     minWidth: 78,
   },
   icon: {
-    fontSize: 18,
-    lineHeight: 20,
-    marginBottom: 2,
+    marginBottom: 3,
   },
   label: {
     fontSize: 10,

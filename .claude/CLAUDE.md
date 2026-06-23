@@ -43,7 +43,8 @@ features/
   bubble/
     BubbleField.tsx       Positions all bubbles + gyro tilt wrapper
     BubbleItem.tsx        Single bubble — gestures, float/wobble animations
-    AddCategorySheet.tsx  FAB "+" button + preset picker bottom sheet
+    AddCategorySheet.tsx  FAB "+" button + preset/custom category bottom sheet
+    DeleteCategorySheet.tsx  Confirm sheet — long-press a bubble in drag mode to delete
     FolderBubble.tsx      (scaffolded, not wired)
     useBubblePhysics.ts   Spring animation for bubble size changes
     useDragGesture.ts     Drag gesture helpers
@@ -52,11 +53,13 @@ features/
     PeriodBar.tsx         Period selector tabs (Today/Yesterday/Week/Month)
     TotalDisplay.tsx      Aggregated spend display
   numpad/
-    NumpadModal.tsx       Bottom-sheet numpad for entering amounts
+    NumpadModal.tsx       Bottom-sheet numpad — amount entry, expense/income toggle, recent-amount chips
     AmountDisplay.tsx     Amount display sub-component
   effects/
     Fireworks.tsx         Particle burst overlay
     useFireworks.ts       Fireworks particle state controller
+  onboarding/
+    OnboardingOverlay.tsx First-launch coach overlay (gestures + income tip)
   timeline/
     HistoryScreen.tsx     History screen
     TransactionList.tsx   Scrollable list with date grouping
@@ -81,7 +84,7 @@ hooks/
   useTranslation.ts       t() keyed on settings language
 
 lib/
-  db.ts                   SQLite open/init + all query helpers
+  db.ts                   SQLite open/init + all query helpers (incl. getRecentAmounts)
   currency.ts             CurrencyMeta + formatCurrency / formatCompact
   notifications.ts        Schedule/cancel daily reminder
   i18n/
@@ -180,6 +183,8 @@ Every transaction write: SQLite → sync_queue → update in-memory state. No ne
 - **Gyroscope:** low-pass filter α = 0.1, then `withSpring` to `BubbleField` translateX/Y
 - **Theme default:** Dark — frosted-glass aesthetic reads best on dark backgrounds
 - **Accent color:** `#7c6af7` — confirm button, active tab indicator, notification toggle
+- **Onboarding:** one-time overlay, gated on persisted `hasCompletedOnboarding` + a transient `_hasHydrated` flag (set via persist `onRehydrateStorage`) so it never flashes for returning users; mounted in `HomeScreen`
+- **Recent amounts:** numpad shows up to 3 recent distinct amounts (per bubble, or for income) via `db.getRecentAmounts()`; re-queried each time the sheet opens, hidden in edit mode
 
 ---
 
