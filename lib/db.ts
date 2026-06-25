@@ -2,7 +2,7 @@
 
 import * as SQLite from 'expo-sqlite';
 import { DB_NAME } from '@/constants/config';
-import type { Category, Transaction, SyncQueueItem, TransactionType } from '@/types';
+import type { Category, Transaction, SyncQueueItem, TransactionType, TransactionEdit } from '@/types';
 
 let _db: SQLite.SQLiteDatabase | null = null;
 
@@ -131,6 +131,30 @@ export function getTransactionsByPeriod(startMs: number, endMs: number): Transac
   }));
 }
 
+// Full transaction history, newest first — used by the backup export.
+export function getAllTransactions(): Transaction[] {
+  const db = getDb();
+  const rows = db.getAllSync<{
+    id: string;
+    category_id: string;
+    amount: number;
+    type: string | null;
+    transacted_at: number;
+    note: string | null;
+    synced: number;
+  }>('SELECT * FROM transactions ORDER BY transacted_at DESC');
+
+  return rows.map((r) => ({
+    id: r.id,
+    categoryId: r.category_id,
+    amount: r.amount,
+    type: (r.type === 'income' ? 'income' : 'expense') as TransactionType,
+    transactedAt: r.transacted_at,
+    note: r.note ?? undefined,
+    synced: r.synced === 1,
+  }));
+}
+
 // Most-recent distinct amounts logged for a category (expense) or the income
 // bucket — powers the one-tap "recent amount" chips in the numpad. We over-fetch
 // a small window and de-duplicate in JS so the chips stay distinct.
@@ -165,10 +189,13 @@ export function insertTransaction(tx: Transaction): void {
   );
 }
 
-export function updateTransactionAmount(id: string, amount: number): void {
+export function updateTransaction(id: string, fields: TransactionEdit): void {
   const db = getDb();
   // synced → 0 marks the row dirty so a future sync flush re-sends it.
-  db.runSync('UPDATE transactions SET amount = ?, synced = 0 WHERE id = ?', [amount, id]);
+  db.runSync(
+    'UPDATE transactions SET amount = ?, category_id = ?, transacted_at = ?, note = ?, synced = 0 WHERE id = ?',
+    [fields.amount, fields.categoryId, fields.transactedAt, fields.note ?? null, id],
+  );
 }
 
 export function deleteTransaction(id: string): void {
@@ -179,6 +206,21 @@ export function deleteTransaction(id: string): void {
 export function deleteTransactionsByCategory(categoryId: string): void {
   const db = getDb();
   db.runSync('DELETE FROM transactions WHERE category_id = ?', [categoryId]);
+}
+
+// Atomically replace ALL local data with a restored backup. Wraps the wipe +
+// bulk insert in a single transaction so a failure can't leave a half-imported
+// database. The sync queue is cleared too — a restore is a fresh local baseline,
+// not a set of pending edits to flush.
+export function replaceAllData(categories: Category[], transactions: Transaction[]): void {
+  const db = getDb();
+  db.withTransactionSync(() => {
+    db.runSync('DELETE FROM sync_queue');
+    db.runSync('DELETE FROM transactions');
+    db.runSync('DELETE FROM categories');
+    for (const cat of categories) insertCategory(cat);
+    for (const tx of transactions) insertTransaction(tx);
+  });
 }
 
 // --- Sync queue ---

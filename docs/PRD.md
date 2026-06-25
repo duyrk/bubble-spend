@@ -60,10 +60,12 @@ Period selector tabs (same four options as Home, independent state).
 
 **Header** — three-column summary identical to Home: Spent / Earned / Net, with the same colour treatment.
 
+**Category breakdown** — a "Where it went" section above the list ranks the period's expense categories, each with a proportion bar (scaled to the top category, tinted with that bubble's colour) and its share of total spending. Hidden when the period has no expenses.
+
 **Transaction list** — chronological list of all transactions in the period, grouped by date. Each row shows:
 - Category emoji + name (`💰 Income` for income rows)
 - Amount with sign — `−450,000 ₫` in white for expenses, `+1,200,000 ₫` in green for income
-- Time of transaction
+- Time of transaction, plus its note when present
 
 Empty state: "No transactions yet" + hint to go log one from Home.
 
@@ -82,6 +84,10 @@ Empty state: "No transactions yet" + hint to go log one from Home.
 - Daily reminder toggle — requests OS permission on first enable
 - Reminder time picker: 09:00 / 12:00 / 18:00 / 21:00 / 22:00 (default: 21:00)
 - Notification content localised to the current language
+
+**Data**
+- Export backup — writes all categories + transactions to a JSON file and opens the share sheet to save or send it
+- Import backup — pick a previously exported file; after a confirmation it **replaces** all current categories and transactions
 
 **About**
 - App version + build number (read from `expo-application`)
@@ -122,16 +128,19 @@ Empty state: "No transactions yet" + hint to go log one from Home.
 
 - Custom category name / emoji input (preset grid + a Custom step)
 - Category deletion UI (long-press in drag mode → confirmation sheet)
-- Edit a transaction's amount (tap the amount in History) and delete it (swipe the row)
+- Edit a transaction's amount, date, category (expenses), and note (tap the amount in History → numpad edit sheet); delete it (swipe the row)
 - First-launch onboarding overlay (wires up `hasCompletedOnboarding`)
 - Recent-amount quick chips on the numpad
 - Backdating new transactions via a JS-only calendar date picker on the numpad
 - Undo toast on Home immediately after logging a transaction
+- Per-category spending breakdown ("Where it went") on the History screen
+- Data export / import — JSON backup of all categories + transactions via the share sheet; restore replaces all local data
+- Jest unit tests for the pure logic layer (currency, period, bubble size, insights, backup)
 
 ## Not Yet Implemented
 
 - Backend API integration (sync queue writes but never flushes)
 - FolderBubble grouping (component scaffolded, not wired)
-- Editing a transaction's date/time, note, category, or type (only the amount is editable today)
+- Editing a transaction's income/expense type, or its exact time of day (the edit sheet covers amount, date, category, and note)
 - Per-category budgets / spending caps
 - A "smarter" daily reminder (skip if already logged today, surface today's running total) — doing this reliably needs background tasks or the backend; today's reminder is a fixed daily nudge

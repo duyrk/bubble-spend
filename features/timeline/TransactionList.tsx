@@ -1,6 +1,6 @@
 // Transaction list grouped by date — staggered row entry, theme-aware separators.
 
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useColors, useResolvedTheme } from '@/hooks/useTheme';
 import type { Transaction, Category } from '@/types';
@@ -13,6 +13,9 @@ interface TransactionListProps {
   emptyHint?: string;
   onDelete: (id: string) => void;
   onEditAmount: (tx: Transaction) => void;
+  // Optional node rendered at the top of the scroll content (scrolls with the
+  // list) — used for the category breakdown on History.
+  header?: ReactNode;
 }
 
 type DateGroup = {
@@ -46,6 +49,7 @@ export function TransactionList({
   emptyHint,
   onDelete,
   onEditAmount,
+  header,
 }: TransactionListProps) {
   const colors = useColors();
   const resolvedTheme = useResolvedTheme();
@@ -78,6 +82,7 @@ export function TransactionList({
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
+      {header}
       {groups.map((group, gIdx) => (
         <View key={group.label} style={styles.group}>
           <Text style={[styles.dateLabel, { color: colors.text.tertiary }]}>

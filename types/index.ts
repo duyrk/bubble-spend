@@ -43,6 +43,15 @@ export type Transaction = {
   synced: boolean;
 };
 
+// Editable fields of an existing transaction (History edit flow). `type` is not
+// editable — income/expense conversion is intentionally out of scope.
+export type TransactionEdit = {
+  amount: number;
+  categoryId: string;
+  transactedAt: number;
+  note?: string;
+};
+
 export type SyncQueueItem = {
   id: string;
   operation: 'CREATE' | 'UPDATE' | 'DELETE';

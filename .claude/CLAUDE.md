@@ -17,6 +17,8 @@ Full PRD and architecture: @docs/PRD.md
 - **Sensors:** expo-sensors 15 (Gyroscope for parallax)
 - **Notifications:** expo-notifications 0.32
 - **Locale:** expo-localization 17
+- **Backup:** expo-file-system + expo-sharing + expo-document-picker — JSON export/import of all local data
+- **Testing:** Jest 29 + jest-expo — unit tests for the pure logic layer (`lib/*.test.ts`)
 - **Backend:** Golang (separate repo) — Gin, sqlc + pgx, PostgreSQL — not yet integrated
 
 > TanStack Query and Axios are NOT installed or used. Remove them from any future scaffolding.
@@ -53,8 +55,10 @@ features/
     PeriodBar.tsx         Period selector tabs (Today/Yesterday/Week/Month)
     TotalDisplay.tsx      Aggregated spend display
   numpad/
-    NumpadModal.tsx       Bottom-sheet numpad — amount entry, expense/income toggle, recent-amount chips
+    NumpadModal.tsx       Bottom-sheet numpad — amount entry, expense/income toggle, recent-amount chips; edit flow also edits date/category/note
     AmountDisplay.tsx     Amount display sub-component
+    CategoryPicker.tsx    Edit-flow overlay — reassign an expense to another bubble
+    NoteEditor.tsx        Edit-flow overlay — add/edit a transaction note
   effects/
     Fireworks.tsx         Particle burst overlay
     useFireworks.ts       Fireworks particle state controller
@@ -62,8 +66,9 @@ features/
     OnboardingOverlay.tsx First-launch coach overlay (gestures + income tip)
   timeline/
     HistoryScreen.tsx     History screen
-    TransactionList.tsx   Scrollable list with date grouping
-    TransactionItem.tsx   Single row — emoji, name, amount, time
+    TransactionList.tsx   Scrollable list with date grouping (+ optional header slot)
+    TransactionItem.tsx   Single row — emoji, name, amount, time, note
+    CategoryBreakdown.tsx "Where it went" — per-category spend bars, rendered as the list header
   settings/
     SettingsScreen.tsx    Settings screen
     SettingsGroup.tsx     Grouped section container
@@ -84,8 +89,13 @@ hooks/
   useTranslation.ts       t() keyed on settings language
 
 lib/
-  db.ts                   SQLite open/init + all query helpers (incl. getRecentAmounts)
+  db.ts                   SQLite open/init + all query helpers (incl. getRecentAmounts, getAllTransactions, replaceAllData)
   currency.ts             CurrencyMeta + formatCurrency / formatCompact
+  backup.ts               Pure backup (de)serialization + validation (unit-tested)
+  backupIO.ts             Export/import orchestration (file system, share sheet, document picker, atomic DB replace)
+  insights.ts             computeCategoryBreakdown — pure per-category aggregation (unit-tested)
+  period.ts               getPeriodRange — pure period → [start, end) ms range (unit-tested)
+  bubbleSize.ts           computeBubbleSize — pure bubble-size formula (unit-tested)
   notifications.ts        Schedule/cancel daily reminder
   i18n/
     translations.ts       English + Vietnamese string dictionaries
@@ -176,7 +186,7 @@ Every transaction write: SQLite → sync_queue → update in-memory state. No ne
 - **Gesture threshold:** tap < 500ms → open numpad | long press ≥ 500ms → enter drag mode
 - **Drag mode:** pan gesture enabled, tap/longPress disabled, tab swipe disabled
 - **Tab bar hides when numpad is open** — `FloatingTabBar` returns `null` when `activeModal !== null`
-- **Timestamps:** default to `Date.now()`; the create numpad has a date pill → calendar for backdating (resets to Today on open, future days disabled). Backdated entries stamp the chosen day at the current wall-clock time. History edit flow stays amount-only.
+- **Timestamps:** default to `Date.now()`; the create numpad has a date pill → calendar for backdating (resets to Today on open, future days disabled). Backdated entries stamp the chosen day at the current wall-clock time. The History **edit** flow edits amount, date, category (expenses only), and note — `type` stays locked; a date change preserves the transaction's original time-of-day.
 - **Position stored as percentage (0–100)** — not absolute px, survives device/rotation changes
 - **History screen reads SQLite directly** — does not use `useTransactionStore`
 - **Float animation seeded from position** — `floatDuration = 2800 + (positionX * 30) % 800`, `floatAmplitude = 4 + (positionY * 0.03) % 3`
@@ -185,6 +195,9 @@ Every transaction write: SQLite → sync_queue → update in-memory state. No ne
 - **Accent color:** `#7c6af7` — confirm button, active tab indicator, notification toggle
 - **Onboarding:** one-time overlay, gated on persisted `hasCompletedOnboarding` + a transient `_hasHydrated` flag (set via persist `onRehydrateStorage`) so it never flashes for returning users; mounted in `HomeScreen`
 - **Recent amounts:** numpad shows up to 3 recent distinct amounts (per bubble, or for income) via `db.getRecentAmounts()`; re-queried each time the sheet opens, hidden in edit mode
+- **Insights:** History shows a "Where it went" breakdown (`CategoryBreakdown`) as the list header — expense-only, sorted, bars scaled to the top category and tinted by bubble color. Aggregation is the pure `computeCategoryBreakdown` in `lib/insights.ts`.
+- **Backup:** Settings → Data exports all categories + transactions to a JSON file (share sheet) and imports one back. Import **replaces** all local data via an atomic `db.replaceAllData` (wipe + bulk-insert in one transaction, clears the sync queue), then reloads the stores. Pure (de)serialization/validation in `lib/backup.ts`; device IO in `lib/backupIO.ts`.
+- **Pure logic is extracted + unit-tested:** `currency`, `period`, `bubbleSize`, `insights`, `backup` import only types, so Jest runs them with no native shims. Keep new pure logic in `lib/*` (no RN/expo imports) with a sibling `*.test.ts`.
 
 ---
 
@@ -205,6 +218,7 @@ npx expo start --ios     # iOS simulator
 npx expo run:android     # Android (native build)
 npx tsc --noEmit         # typecheck
 npx eslint .             # lint
+npm test                 # jest unit tests (pure logic layer)
 eas build --platform android --profile preview   # APK build
 ```
 

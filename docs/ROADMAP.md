@@ -12,10 +12,10 @@
 - ✅ Locale-aware default categories (vi / en) and `__income__` sentinel for income
 
 ## v1.1 — Polish & retention
-- [ ] Category deletion UI (swipe-to-delete in a manage sheet)
-- [ ] Edit / delete individual transactions (swipe on history row)
-- [ ] Custom category name + emoji input (not just presets)
-- [ ] Onboarding flow for first launch (uses `hasCompletedOnboarding` flag)
+- [x] Category deletion UI (long-press a bubble in drag mode → confirmation sheet)
+- [x] Edit / delete individual transactions (swipe to delete; tap → edit amount/date/category/note)
+- [x] Custom category name + emoji input (not just presets)
+- [x] Onboarding flow for first launch (uses `hasCompletedOnboarding` flag)
 - [ ] FolderBubble — group multiple categories into one super-bubble
 - [ ] Swipe gesture between period tabs on Home (in addition to tap)
 
@@ -27,6 +27,7 @@
 - [ ] Recurring expense templates (e.g. rent auto-logs on the 1st)
 
 ## v1.3 — Insights
+- [x] Category spending breakdown per period ("Where it went" — bars on History)
 - [ ] Spending trend chart (line chart, per category over time)
 - [ ] "Peak spending" insight — which day/hour you spend most
 - [ ] Month-over-month comparison
@@ -34,6 +35,7 @@
 - [ ] iOS/Android widget — today's total at a glance
 
 ## v1.4 — Backend & sync
+- [x] Local backup / restore — JSON export + import of all categories + transactions (precursor to cloud backup)
 - [ ] Golang backend integration (Gin, sqlc + pgx, PostgreSQL)
 - [ ] User auth — Google Sign In + JWT
 - [ ] Sync queue flush — drain `sync_queue` rows to backend
@@ -47,7 +49,8 @@
 - [ ] Apple Watch / WearOS companion for even faster logging
 
 ## Technical debt to address
+- [x] Unit tests for the pure logic layer (Jest + jest-expo — currency, period, bubble size, insights, backup)
 - [ ] Replace `expo-sqlite` synchronous API with async when Expo SDK stabilizes it
 - [ ] Add proper error boundaries around SQLite operations
-- [ ] E2E tests with Detox (gesture simulation on real devices)
+- [ ] E2E / component tests (gesture + native-module flows: backup IO, numpad edit) on real devices
 - [ ] Performance profiling: Reanimated worklet count on low-end Android

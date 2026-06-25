@@ -10,10 +10,11 @@ import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useCategoryStore } from '@/stores/useCategoryStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { TransactionList } from './TransactionList';
+import { CategoryBreakdown } from './CategoryBreakdown';
 import { NumpadModal } from '@/features/numpad/NumpadModal';
 import { getPeriodRange, useTransactionStore } from '@/stores/useTransactionStore';
 import * as db from '@/lib/db';
-import type { Period, Transaction } from '@/types';
+import type { Period, Transaction, TransactionEdit } from '@/types';
 import type { TranslationKey } from '@/lib/i18n';
 
 const PERIODS: { key: Period; tKey: TranslationKey }[] = [
@@ -76,8 +77,8 @@ export function HistoryScreen() {
   }, [setNumpadEditing]);
 
   const handleEditConfirm = useCallback(
-    (id: string, amount: number) => {
-      useTransactionStore.getState().updateTransactionAmount(id, amount);
+    (id: string, fields: TransactionEdit) => {
+      useTransactionStore.getState().updateTransaction(id, fields);
       loadTransactions();
     },
     [loadTransactions],
@@ -170,6 +171,7 @@ export function HistoryScreen() {
         emptyHint={t('noTransactionsHint')}
         onDelete={handleDelete}
         onEditAmount={handleEditAmount}
+        header={<CategoryBreakdown transactions={transactions} categories={categories} />}
       />
 
       <NumpadModal

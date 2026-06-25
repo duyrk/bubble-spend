@@ -2,6 +2,7 @@
 
 import * as Localization from 'expo-localization';
 import { SIZES } from '@/constants/theme';
+import { computeBubbleSize } from '@/lib/bubbleSize';
 import * as db from '@/lib/db';
 import { getDefaultCategories } from '@/lib/i18n/defaultCategories';
 import { INCOME_CATEGORY_ID } from '@/types';
@@ -116,10 +117,7 @@ export const useCategoryStore = create<CategoryState>((set, get) => ({
 
     for (const cat of get().categories) {
       const total = totals[cat.id] ?? 0;
-      const ratio = total / maxAmount;
-      const size =
-        SIZES.BUBBLE_BASE + ratio * (SIZES.BUBBLE_MAX - SIZES.BUBBLE_BASE);
-      sizes[cat.id] = { size, total };
+      sizes[cat.id] = { size: computeBubbleSize(total, maxAmount), total };
     }
 
     set({ sizes });

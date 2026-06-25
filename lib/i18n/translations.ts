@@ -106,6 +106,32 @@ const en = {
   // Undo toast
   logged: 'Logged',
   undo: 'Undo',
+
+  // Insights
+  breakdownTitle: 'Where it went',
+
+  // Data / backup
+  data: 'Data',
+  exportData: 'Export backup',
+  exportDataDesc: 'Save all your data to a file',
+  importData: 'Import backup',
+  importDataDesc: 'Replace all data from a backup file',
+  importConfirmTitle: 'Replace all data?',
+  importConfirmBody:
+    'This overwrites your current categories and transactions with the backup. This cannot be undone.',
+  importSuccess: 'Data restored',
+  importError: 'Could not read that backup file',
+  exportError: 'Could not export data',
+  nothingToExport: 'No data to export yet',
+  replace: 'Replace',
+  ok: 'OK',
+
+  // Transaction edit
+  changeCategory: 'Change category',
+  note: 'Note',
+  addNote: 'Add note',
+  notePlaceholder: 'Add a note…',
+  save: 'Save',
 } as const;
 
 export type TranslationKey = keyof typeof en;
@@ -187,6 +213,29 @@ const vi: Record<TranslationKey, string> = {
 
   logged: 'Đã ghi',
   undo: 'Hoàn tác',
+
+  breakdownTitle: 'Tiền đi đâu',
+
+  data: 'Dữ liệu',
+  exportData: 'Xuất bản sao lưu',
+  exportDataDesc: 'Lưu toàn bộ dữ liệu ra một tệp',
+  importData: 'Nhập bản sao lưu',
+  importDataDesc: 'Thay thế toàn bộ dữ liệu từ tệp sao lưu',
+  importConfirmTitle: 'Thay thế toàn bộ dữ liệu?',
+  importConfirmBody:
+    'Thao tác này sẽ ghi đè danh mục và giao dịch hiện tại bằng dữ liệu sao lưu. Không thể hoàn tác.',
+  importSuccess: 'Đã khôi phục dữ liệu',
+  importError: 'Không thể đọc tệp sao lưu này',
+  exportError: 'Không thể xuất dữ liệu',
+  nothingToExport: 'Chưa có dữ liệu để xuất',
+  replace: 'Thay thế',
+  ok: 'OK',
+
+  changeCategory: 'Đổi danh mục',
+  note: 'Ghi chú',
+  addNote: 'Thêm ghi chú',
+  notePlaceholder: 'Thêm ghi chú…',
+  save: 'Lưu',
 };
 
 export const TRANSLATIONS: Record<Language, Record<TranslationKey, string>> = { en, vi };

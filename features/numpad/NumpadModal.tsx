@@ -21,11 +21,14 @@ import * as db from '@/lib/db';
 import { BLUR, RADII, SPRING, TIMING } from '@/constants/theme';
 import { GlassSurface } from '@/components/ui/GlassSurface';
 import { Calendar } from '@/components/ui/Calendar';
+import { CategoryPicker } from './CategoryPicker';
+import { NoteEditor } from './NoteEditor';
 import { formatShortDate, isSameDay } from '@/lib/i18n';
 import {
   INCOME_CATEGORY_ID,
   type TransactionType,
   type Transaction,
+  type TransactionEdit,
   type Category,
 } from '@/types';
 
@@ -57,13 +60,13 @@ interface NumpadModalProps {
     txId: string,
   ) => void;
   // Edit flow (History) — when `editMode` is true the modal ignores the global
-  // UI store entirely and is driven by these props. Only the amount is editable;
-  // the type/category are locked to the transaction being edited.
+  // UI store entirely and is driven by these props. Amount, date, category
+  // (expenses) and note are editable; the income/expense type stays locked.
   editMode?: boolean;
   editTransaction?: Transaction | null;
   editCategory?: Category;
   onEditClose?: () => void;
-  onEditConfirm?: (id: string, amount: number) => void;
+  onEditConfirm?: (id: string, fields: TransactionEdit) => void;
 }
 
 const KEYS: string[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '000', '0'];
@@ -91,9 +94,16 @@ export function NumpadModal({
   const [amount, setAmount] = useState('0');
   const [txType, setTxType] = useState<TransactionType>('expense');
   const [recentAmounts, setRecentAmounts] = useState<number[]>([]);
-  // Backdating (create flow only) — defaults to today every time the sheet opens.
+  // Backdating — create flow defaults to today on open; edit flow seeds from the
+  // transaction. Picking a day keeps the original time-of-day on edit.
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
   const [showCalendar, setShowCalendar] = useState(false);
+  // Edit-only state: the (re-assignable) category, the note text, and which
+  // editor overlay is open.
+  const [editCategoryId, setEditCategoryId] = useState<string | null>(null);
+  const [note, setNote] = useState('');
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
+  const [showNoteEditor, setShowNoteEditor] = useState(false);
 
   // Open/close + source context resolve from either the edit props (History) or
   // the global store (create flow, Home). A given instance is driven by exactly
@@ -101,7 +111,7 @@ export function NumpadModal({
   const isOpen = editing ? editTransaction != null : activeModal !== null;
   const createSourceId = activeModal?.categoryId ?? null;
   const sourceCategory = editing
-    ? editCategory
+    ? categories.find((c) => c.id === editCategoryId) ?? editCategory
     : createSourceId
       ? categories.find((c) => c.id === createSourceId)
       : undefined;
@@ -150,6 +160,12 @@ export function NumpadModal({
       if (editTransaction) {
         setAmount(String(Math.round(editTransaction.amount)));
         setTxType(editTransaction.type);
+        setEditCategoryId(editTransaction.categoryId);
+        setNote(editTransaction.note ?? '');
+        setSelectedDate(new Date(editTransaction.transactedAt));
+        setShowCalendar(false);
+        setShowCategoryPicker(false);
+        setShowNoteEditor(false);
       }
     }
   }, [editing, editTransaction]);
@@ -193,11 +209,32 @@ export function NumpadModal({
   const handleConfirm = useCallback(() => {
     const value = parseInt(amount, 10) || 0;
 
-    // Edit flow — only the amount changes; type/category are untouched.
+    // Edit flow — amount, date, category (expenses) and note can change; the
+    // income/expense type stays as it was.
     if (editing) {
       if (value > 0 && editTransaction) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        onEditConfirm?.(editTransaction.id, value);
+        // Keep the original time-of-day; only the calendar day is editable.
+        const orig = new Date(editTransaction.transactedAt);
+        const transactedAt = new Date(
+          selectedDate.getFullYear(),
+          selectedDate.getMonth(),
+          selectedDate.getDate(),
+          orig.getHours(),
+          orig.getMinutes(),
+          orig.getSeconds(),
+          orig.getMilliseconds(),
+        ).getTime();
+        const trimmedNote = note.trim();
+        onEditConfirm?.(editTransaction.id, {
+          amount: value,
+          categoryId:
+            editTransaction.type === 'income'
+              ? editTransaction.categoryId
+              : editCategoryId ?? editTransaction.categoryId,
+          transactedAt,
+          note: trimmedNote.length > 0 ? trimmedNote : undefined,
+        });
       }
       onEditClose?.();
       return;
@@ -239,6 +276,8 @@ export function NumpadModal({
     txType,
     sourceCategory,
     selectedDate,
+    note,
+    editCategoryId,
     add,
     closeModal,
     onTransactionConfirmed,
@@ -382,26 +421,73 @@ export function NumpadModal({
               </Pressable>
             </View>
 
-            <Text style={[styles.categoryLabel, { color: colors.text.secondary }]}>
-              {headerLabel ? `${headerEmoji}  ${headerLabel}` : ''}
-            </Text>
+            {editing && txType === 'expense' ? (
+              <Pressable
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setShowCategoryPicker(true);
+                }}
+                style={[
+                  styles.editPill,
+                  styles.categoryPill,
+                  { backgroundColor: colors.glass.base, borderColor: colors.glass.border },
+                ]}
+              >
+                <Text
+                  style={[styles.editPillText, { color: colors.text.secondary }]}
+                  numberOfLines={1}
+                >
+                  {sourceCategory
+                    ? `${sourceCategory.emoji}  ${sourceCategory.name}  ›`
+                    : `${t('changeCategory')}  ›`}
+                </Text>
+              </Pressable>
+            ) : (
+              <Text style={[styles.categoryLabel, { color: colors.text.secondary }]}>
+                {headerLabel ? `${headerEmoji}  ${headerLabel}` : ''}
+              </Text>
+            )}
 
-            {!editing ? (
+            <View style={styles.pillRow}>
               <Pressable
                 onPress={() => {
                   Haptics.selectionAsync();
                   setShowCalendar(true);
                 }}
                 style={[
-                  styles.datePill,
+                  styles.editPill,
                   { backgroundColor: colors.glass.base, borderColor: colors.glass.border },
                 ]}
               >
-                <Text style={[styles.datePillText, { color: colors.text.secondary }]}>
+                <Text style={[styles.editPillText, { color: colors.text.secondary }]}>
                   📅  {dateLabel}
                 </Text>
               </Pressable>
-            ) : null}
+
+              {editing ? (
+                <Pressable
+                  onPress={() => {
+                    Haptics.selectionAsync();
+                    setShowNoteEditor(true);
+                  }}
+                  style={[
+                    styles.editPill,
+                    styles.notePill,
+                    { backgroundColor: colors.glass.base, borderColor: colors.glass.border },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.editPillText,
+                      { color: note ? colors.text.secondary : colors.text.tertiary },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    📝  {note ? note : t('addNote')}
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
 
             <Animated.View style={[styles.displayRow, amountStyle]}>
               {meta.symbolBefore ? (
@@ -505,6 +591,33 @@ export function NumpadModal({
             />
           </GlassSurface>
         </View>
+      ) : null}
+
+      {editing && isOpen && showCategoryPicker ? (
+        <CategoryPicker
+          categories={categories}
+          selectedId={editCategoryId}
+          title={t('changeCategory')}
+          onSelect={(id) => {
+            setEditCategoryId(id);
+            setShowCategoryPicker(false);
+          }}
+          onClose={() => setShowCategoryPicker(false)}
+        />
+      ) : null}
+
+      {editing && isOpen && showNoteEditor ? (
+        <NoteEditor
+          initialValue={note}
+          placeholder={t('notePlaceholder')}
+          saveLabel={t('save')}
+          accentColor={confirmColor}
+          onSave={(v) => {
+            setNote(v);
+            setShowNoteEditor(false);
+          }}
+          onClose={() => setShowNoteEditor(false)}
+        />
       ) : null}
     </>
   );
@@ -618,20 +731,33 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
     minHeight: 16,
   },
-  datePill: {
-    alignSelf: 'center',
+  editPill: {
     flexDirection: 'row',
     alignItems: 'center',
+    alignSelf: 'center',
     paddingHorizontal: 14,
     paddingVertical: 6,
     borderRadius: 99,
     borderWidth: 0.5,
-    marginBottom: 14,
   },
-  datePillText: {
+  editPillText: {
     fontSize: 13,
     fontWeight: '600',
     letterSpacing: 0.2,
+  },
+  categoryPill: {
+    marginBottom: 10,
+    maxWidth: '80%',
+  },
+  pillRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 14,
+  },
+  notePill: {
+    maxWidth: 220,
   },
   calendarOverlay: {
     ...StyleSheet.absoluteFillObject,

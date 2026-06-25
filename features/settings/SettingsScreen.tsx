@@ -1,6 +1,6 @@
 // Settings screen — theme, language, currency, notifications, version
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Alert, Platform, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Application from 'expo-application';
@@ -8,6 +8,9 @@ import { SettingsGroup } from './SettingsGroup';
 import { SettingsRow } from './SettingsRow';
 import { OptionPickerModal } from './OptionPickerModal';
 import { useSettingsStore } from '@/stores/useSettingsStore';
+import { useCategoryStore } from '@/stores/useCategoryStore';
+import { useTransactionStore } from '@/stores/useTransactionStore';
+import { exportData, pickBackup, applyBackup } from '@/lib/backupIO';
 import { useColors } from '@/hooks/useTheme';
 import { useTranslation } from '@/hooks/useTranslation';
 import { LANGUAGES } from '@/lib/i18n';
@@ -77,6 +80,54 @@ export function SettingsScreen() {
     }
   };
 
+  // After a restore, re-read categories + the active period's transactions from
+  // SQLite and re-scale the bubbles so Home/History reflect the imported data.
+  const reloadAfterImport = useCallback(() => {
+    useCategoryStore.getState().load();
+    const period = useTransactionStore.getState().period;
+    useTransactionStore.getState().loadByPeriod(period);
+    useCategoryStore.getState().recalcSizes(useTransactionStore.getState().transactions);
+  }, []);
+
+  const handleExport = useCallback(async () => {
+    try {
+      const result = await exportData();
+      if (result.status === 'empty') {
+        Alert.alert(t('exportData'), t('nothingToExport'));
+      }
+    } catch {
+      Alert.alert(t('exportData'), t('exportError'));
+    }
+  }, [t]);
+
+  const handleImport = useCallback(async () => {
+    // pickBackup resolves null when the user cancels, and throws (with a clear
+    // message) when the chosen file isn't a valid backup. The catch maps the
+    // throw to null after surfacing it, so both paths just bail below.
+    const payload = await pickBackup().catch((e: unknown) => {
+      Alert.alert(t('importData'), e instanceof Error ? e.message : t('importError'));
+      return null;
+    });
+    if (!payload) return;
+
+    Alert.alert(t('importConfirmTitle'), t('importConfirmBody'), [
+      { text: t('cancel'), style: 'cancel' },
+      {
+        text: t('replace'),
+        style: 'destructive',
+        onPress: () => {
+          try {
+            applyBackup(payload);
+            reloadAfterImport();
+            Alert.alert(t('importData'), t('importSuccess'));
+          } catch {
+            Alert.alert(t('importData'), t('importError'));
+          }
+        },
+      },
+    ]);
+  }, [t, reloadAfterImport]);
+
   const formatTime = (h: number, m: number) =>
     `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
 
@@ -136,6 +187,20 @@ export function SettingsScreen() {
             label={t('reminderTime')}
             value={formatTime(reminderHour, reminderMinute)}
             onPress={notificationsEnabled ? () => setPicker('reminderTime') : undefined}
+            isLast
+          />
+        </SettingsGroup>
+
+        <SettingsGroup title={t('data')}>
+          <SettingsRow
+            label={t('exportData')}
+            description={t('exportDataDesc')}
+            onPress={handleExport}
+          />
+          <SettingsRow
+            label={t('importData')}
+            description={t('importDataDesc')}
+            onPress={handleImport}
             isLast
           />
         </SettingsGroup>

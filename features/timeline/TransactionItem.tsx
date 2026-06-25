@@ -117,7 +117,9 @@ export function TransactionItem({
           </View>
           <View style={styles.info}>
             <Text style={[styles.name, { color: colors.text.primary }]}>{displayName}</Text>
-            <Text style={[styles.time, { color: colors.text.tertiary }]}>{time}</Text>
+            <Text style={[styles.time, { color: colors.text.tertiary }]} numberOfLines={1}>
+              {transaction.note ? `${time}  ·  ${transaction.note}` : time}
+            </Text>
           </View>
           <Pressable onPress={() => onEditAmount(transaction)} hitSlop={8}>
             <Text style={[styles.amount, { color: amountColor }]}>

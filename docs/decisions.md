@@ -263,3 +263,49 @@ The Vietnamese dictionary is typed `Record<TranslationKey, string>` so a missing
 Seed categories live in `DEFAULT_CATEGORIES` keyed by `LocaleCode`. A separate `getDefaultCategories(locale)` returns the right list with an `en` fallback.
 
 **Why:** Seed categories are *first-time setup data*, not runtime strings. They're written once into SQLite when the categories table is empty and never re-read. Coupling them to the live `t()` translation would mean the stored category name would silently re-render when the user switches language — confusing, since the user may have personalised it. Locale-keyed seeding keeps the database stable.
+
+---
+
+## Backup
+
+### Backup format: JSON, full-fidelity, `categories` + `transactions`
+
+Export serializes a `{ app, version, exportedAt, categories, transactions }` envelope (`lib/backup.ts`) to a `.json` file in the cache dir, then opens the share sheet (`lib/backupIO.ts`). The sync queue and settings are **not** exported — the queue is transient, and settings are trivially reconfigurable; the irreplaceable data is the categories and transactions.
+
+**Why:** JSON round-trips the exact domain objects (an absent `note` stays `undefined`, not `null`), so a restore reproduces state precisely. CSV was rejected for the backup path because it's lossy (no clean type/sync/sentinel-income representation) and can't be re-imported without ambiguity. The `app`/`version` fields let `parseBackup` reject foreign files and let a future schema migrate older backups.
+
+### Import replaces all data atomically; pure parse is separate from IO
+
+`parseBackup` validates and throws *before* anything is written; the destructive `db.replaceAllData` wipes `sync_queue` → `transactions` → `categories` and bulk-inserts inside a single `withTransactionSync`. The UI confirms the replace between picking the file and committing it, then reloads the stores.
+
+**Why:** A half-applied import would corrupt the ledger. Validating first means a bad file aborts with a clear message and an untouched DB; wrapping the wipe+insert in one transaction means a mid-import failure rolls back entirely. "Replace" (not "merge") keeps semantics predictable — merge would need conflict resolution on ids/amounts that a personal backup doesn't warrant. Keeping `lib/backup.ts` free of native imports is what makes the round-trip unit-testable.
+
+---
+
+## Insights
+
+### Category breakdown is the History list header, scaled to the top category
+
+`CategoryBreakdown` renders inside the `TransactionList` `ScrollView` (via a `header` slot) so it scrolls with the rows instead of stealing fixed height. Bars are scaled relative to the largest category (top bar is full-width) while the number shown is share of *total* spending; income and unknown-category rows are excluded. Aggregation is the pure `computeCategoryBreakdown` (`lib/insights.ts`).
+
+**Why:** A fixed block above a `flex: 1` list would shrink the list on small screens; a scrolling header keeps all vertical space for transactions when you scroll. Scaling bars to the max (rather than to total) makes the ranking legible at a glance — the dominant category visibly dwarfs the rest — while the percentage still answers "what share was this." Excluding income matches the bubble-sizing rule: the breakdown is about *spending*.
+
+---
+
+## Transaction editing
+
+### The edit sheet re-reads the period after a write; a date change keeps the time-of-day
+
+`updateTransaction` writes the row then re-queries the active period from SQLite (rather than patching the in-memory array) and re-scales bubbles. The numpad edit flow lets you change amount, date, category (expenses only), and note — never the `type` — and a new day is stamped at the transaction's *original* time-of-day.
+
+**Why:** An edit can move a transaction across the period boundary or change its category, so an in-place patch could leave the Home slice or bubble sizes stale; re-reading is simplest and always correct. Type conversion (income↔expense) is excluded because it would change what the row *means* (income has no bubble, doesn't size categories) — better done as delete + re-add. Preserving the original clock time keeps a backdated row sorting naturally within its day, matching the create-flow rule.
+
+---
+
+## Testing
+
+### Unit tests cover the pure logic layer only; helpers are extracted to enable it
+
+`currency`, `period`, `bubbleSize`, `insights`, and `backup` live in `lib/*` importing only types, and each has a sibling `*.test.ts` run by `jest-expo`. `getPeriodRange` and the bubble-size formula were extracted out of the stores specifically so they could be tested without pulling in `expo-sqlite`/RN.
+
+**Why:** Component/native tests on an Expo app are slow and flaky (native shims, gesture/animation worklets), and add little confidence for this app's risk areas. The real correctness risks are arithmetic and (de)serialization — currency formatting, period boundaries, size scaling, and backup round-trips — all pure and cheaply tested. Keeping these modules native-free is the constraint that keeps the suite fast (<1s) and deterministic.

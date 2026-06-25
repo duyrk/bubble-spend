@@ -1,9 +1,13 @@
 // Zustand store for transactions with offline-first sync queue
 
 import { create } from 'zustand';
-import type { Transaction, Period, SyncQueueItem, TransactionType } from '@/types';
+import type { Transaction, Period, SyncQueueItem, TransactionType, TransactionEdit } from '@/types';
 import * as db from '@/lib/db';
+import { getPeriodRange } from '@/lib/period';
 import { useCategoryStore } from './useCategoryStore';
+
+// Re-exported for screens that query SQLite directly (e.g. History).
+export { getPeriodRange };
 
 type TransactionState = {
   transactions: Transaction[];
@@ -17,7 +21,7 @@ type TransactionState = {
     note?: string,
     transactedAt?: number,
   ) => Transaction;
-  updateTransactionAmount: (id: string, amount: number) => void;
+  updateTransaction: (id: string, fields: TransactionEdit) => void;
   deleteTransaction: (id: string) => void;
   getExpenseTotal: () => number;
   getIncomeTotal: () => number;
@@ -27,32 +31,6 @@ type TransactionState = {
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
 }
-
-function getPeriodRange(period: Period): { start: number; end: number } {
-  const now = new Date();
-  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const dayMs = 24 * 60 * 60 * 1000;
-
-  switch (period) {
-    case 'today':
-      return { start: startOfDay, end: startOfDay + dayMs };
-    case 'yesterday':
-      return { start: startOfDay - dayMs, end: startOfDay };
-    case 'week': {
-      const dayOfWeek = now.getDay(); // 0=Sun
-      const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-      const weekStart = startOfDay - mondayOffset * dayMs;
-      return { start: weekStart, end: weekStart + 7 * dayMs };
-    }
-    case 'month': {
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime();
-      return { start: monthStart, end: monthEnd };
-    }
-  }
-}
-
-export { getPeriodRange };
 
 export const useTransactionStore = create<TransactionState>((set, get) => ({
   transactions: [],
@@ -93,13 +71,14 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
     return tx;
   },
 
-  updateTransactionAmount: (id, amount) => {
-    db.updateTransactionAmount(id, amount);
-    const transactions = get().transactions.map((tx) =>
-      tx.id === id ? { ...tx, amount, synced: false } : tx,
-    );
+  updateTransaction: (id, fields) => {
+    db.updateTransaction(id, fields);
+    // The edit can move the row across the active period boundary or change its
+    // category, so re-read the period slice from SQLite rather than patching in
+    // place, then re-scale bubbles (amount/category both affect sizing).
+    const { start, end } = getPeriodRange(get().period);
+    const transactions = db.getTransactionsByPeriod(start, end);
     set({ transactions });
-    // Editing an expense amount changes that bubble's size — re-scale all bubbles.
     useCategoryStore.getState().recalcSizes(transactions);
   },
 
