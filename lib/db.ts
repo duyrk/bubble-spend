@@ -42,11 +42,11 @@ export function initDb(): void {
   `);
 
   // Idempotent column migration for installs that pre-date the `type` column.
-  // SQLite throws if the column already exists — that's expected; swallow it.
-  try {
+  // Probe with PRAGMA first rather than catching a thrown ALTER — a failed
+  // ALTER still surfaces a noisy native exception log even when swallowed.
+  const columns = db.getAllSync<{ name: string }>('PRAGMA table_info(transactions)');
+  if (!columns.some((c) => c.name === 'type')) {
     db.execSync(`ALTER TABLE transactions ADD COLUMN type TEXT NOT NULL DEFAULT 'expense';`);
-  } catch {
-    // column already present
   }
 
   db.execSync(`

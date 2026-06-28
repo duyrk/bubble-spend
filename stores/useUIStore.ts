@@ -18,9 +18,12 @@ type UIState = {
   activePeriod: Period;
   // Category id pending delete confirmation (long-press in drag mode). null = no sheet.
   pendingDeleteCategoryId: string | null;
-  // True while the History edit numpad is open. That sheet is driven by local
-  // History state (not `activeModal`), so the tab bar needs a separate signal.
-  numpadEditing: boolean;
+  // True while the numpad sheet is anywhere on screen — from the instant it opens
+  // until its slide-out animation finishes. Drives the tab bar hide. Tracked
+  // separately from `activeModal` so the bar stays hidden through the ~400ms
+  // close animation instead of popping back over the still-descending sheet.
+  // The NumpadModal owns this flag (covers both the create and edit flows).
+  sheetVisible: boolean;
 
   openModal: (categoryId: string) => void;
   openIncomeModal: () => void;
@@ -30,7 +33,7 @@ type UIState = {
   setPeriod: (period: Period) => void;
   requestDeleteCategory: (categoryId: string) => void;
   cancelDeleteCategory: () => void;
-  setNumpadEditing: (editing: boolean) => void;
+  setSheetVisible: (visible: boolean) => void;
 };
 
 export const useUIStore = create<UIState>((set) => ({
@@ -38,7 +41,7 @@ export const useUIStore = create<UIState>((set) => ({
   dragMode: false,
   activePeriod: 'today',
   pendingDeleteCategoryId: null,
-  numpadEditing: false,
+  sheetVisible: false,
 
   openModal: (categoryId) =>
     set({ activeModal: { categoryId, defaultType: 'expense' } }),
@@ -50,5 +53,5 @@ export const useUIStore = create<UIState>((set) => ({
   setPeriod: (period) => set({ activePeriod: period }),
   requestDeleteCategory: (categoryId) => set({ pendingDeleteCategoryId: categoryId }),
   cancelDeleteCategory: () => set({ pendingDeleteCategoryId: null }),
-  setNumpadEditing: (editing) => set({ numpadEditing: editing }),
+  setSheetVisible: (visible) => set({ sheetVisible: visible }),
 }));

@@ -1,4 +1,4 @@
-import { getPeriodRange } from './period';
+import { getPeriodRange, stepPeriod, PERIOD_ORDER } from './period';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 // A fixed reference moment: 2026-06-24 15:30 local time.
@@ -40,5 +40,28 @@ describe('getPeriodRange', () => {
     expect(new Date(start).getDay()).toBe(1);
     expect(start).toBe(new Date(2026, 5, 22).getTime()); // Mon 2026-06-22
     expect(end).toBe(new Date(2026, 5, 29).getTime());
+  });
+});
+
+describe('stepPeriod', () => {
+  it('steps forward through the canonical order', () => {
+    expect(stepPeriod('today', 1)).toBe('yesterday');
+    expect(stepPeriod('yesterday', 1)).toBe('week');
+    expect(stepPeriod('week', 1)).toBe('month');
+  });
+
+  it('steps backward through the canonical order', () => {
+    expect(stepPeriod('month', -1)).toBe('week');
+    expect(stepPeriod('week', -1)).toBe('yesterday');
+    expect(stepPeriod('yesterday', -1)).toBe('today');
+  });
+
+  it('clamps at the ends instead of wrapping', () => {
+    expect(stepPeriod('today', -1)).toBe('today');
+    expect(stepPeriod('month', 1)).toBe('month');
+  });
+
+  it('PERIOD_ORDER matches the tab order', () => {
+    expect(PERIOD_ORDER).toEqual(['today', 'yesterday', 'week', 'month']);
   });
 });

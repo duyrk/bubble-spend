@@ -8,7 +8,6 @@ import { useColors } from '@/hooks/useTheme';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useCategoryStore } from '@/stores/useCategoryStore';
-import { useUIStore } from '@/stores/useUIStore';
 import { TransactionList } from './TransactionList';
 import { CategoryBreakdown } from './CategoryBreakdown';
 import { NumpadModal } from '@/features/numpad/NumpadModal';
@@ -33,7 +32,6 @@ export function HistoryScreen() {
   const { t } = useTranslation();
   const { compact } = useFormatCurrency();
   const categories = useCategoryStore((s) => s.categories);
-  const setNumpadEditing = useUIStore((s) => s.setNumpadEditing);
   const [period, setPeriod] = useState<Period>('today');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [editTarget, setEditTarget] = useState<Transaction | null>(null);
@@ -63,18 +61,13 @@ export function HistoryScreen() {
     [loadTransactions],
   );
 
-  const handleEditAmount = useCallback(
-    (tx: Transaction) => {
-      setEditTarget(tx);
-      setNumpadEditing(true);
-    },
-    [setNumpadEditing],
-  );
+  const handleEditAmount = useCallback((tx: Transaction) => {
+    setEditTarget(tx);
+  }, []);
 
   const handleEditClose = useCallback(() => {
     setEditTarget(null);
-    setNumpadEditing(false);
-  }, [setNumpadEditing]);
+  }, []);
 
   const handleEditConfirm = useCallback(
     (id: string, fields: TransactionEdit) => {

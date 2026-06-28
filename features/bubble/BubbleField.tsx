@@ -2,6 +2,7 @@
 
 import { StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
+import type { GestureType } from 'react-native-gesture-handler';
 import { useCategoriesWithSize } from '@/hooks/useCategoriesWithSize';
 import { useGyroscopeTilt } from '@/hooks/useGyroscopeTilt';
 import { useUIStore } from '@/stores/useUIStore';
@@ -9,7 +10,13 @@ import { BubbleItem } from './BubbleItem';
 import { AddCategorySheet } from './AddCategorySheet';
 import { DeleteCategorySheet } from './DeleteCategorySheet';
 
-export function BubbleField() {
+interface BubbleFieldProps {
+  // Home period-swipe pan, forwarded to each bubble so a horizontal swipe that
+  // starts on a bubble isn't swallowed by the bubble's own gestures.
+  swipeGesture?: GestureType;
+}
+
+export function BubbleField({ swipeGesture }: BubbleFieldProps) {
   const dragMode = useUIStore((s) => s.dragMode);
   const { tiltX, tiltY } = useGyroscopeTilt();
 
@@ -27,6 +34,7 @@ export function BubbleField() {
             category={cat}
             index={index}
             dragMode={dragMode}
+            swipeGesture={swipeGesture}
           />
         ))}
       </Animated.View>

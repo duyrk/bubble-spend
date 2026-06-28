@@ -32,7 +32,7 @@ import Animated, {
   cancelAnimation,
   runOnJS,
 } from 'react-native-reanimated';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import type { CategoryWithSize } from '@/types';
 import { GESTURE } from '@/constants/config';
@@ -48,6 +48,9 @@ interface BubbleItemProps {
   category: CategoryWithSize;
   dragMode: boolean;
   index: number;
+  // The Home period-swipe pan. Marked simultaneous so a horizontal swipe started
+  // on a bubble activates the swipe instead of being swallowed by these gestures.
+  swipeGesture?: GestureType;
 }
 
 // Border thickness of the rim gradient ring (px)
@@ -64,7 +67,7 @@ const HIT_SLOP = 10;
 // Extra diameter of the glow halo beyond the bubble (px), split evenly each side.
 const GLOW_SPREAD = 28;
 
-function BubbleItemImpl({ category, dragMode, index }: BubbleItemProps) {
+function BubbleItemImpl({ category, dragMode, index, swipeGesture }: BubbleItemProps) {
   const { animatedSize } = useBubblePhysics(category.size);
   const bubbleColors = useBubbleColors();
   const palette = bubbleColors[category.colorKey];
@@ -213,6 +216,18 @@ function BubbleItemImpl({ category, dragMode, index }: BubbleItemProps) {
       translateX.value = 0;
       translateY.value = 0;
     });
+
+  // Let the Home period-swipe win horizontal drags that start on this bubble.
+  // Without this relation the bubble's own detector blocks the parent swipe pan,
+  // so the tab never changes. Declared on each leaf gesture (the composed wrapper
+  // has no such method). The bubble's tap still fails on movement, so there's no
+  // double action; drag-mode pan is unaffected (the swipe is disabled in drag mode).
+  if (swipeGesture) {
+    tap.simultaneousWithExternalGesture(swipeGesture);
+    longPress.simultaneousWithExternalGesture(swipeGesture);
+    longPressDelete.simultaneousWithExternalGesture(swipeGesture);
+    pan.simultaneousWithExternalGesture(swipeGesture);
+  }
 
   const gesture = Gesture.Simultaneous(
     Gesture.Exclusive(longPress, longPressDelete, tap),

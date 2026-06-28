@@ -3,9 +3,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, View, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { runOnJS } from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
 import { useBubbleColors, useColors } from '@/hooks/useTheme';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useUIStore } from '@/stores/useUIStore';
+import { stepPeriod } from '@/lib/period';
+import { GESTURE } from '@/constants/config';
 import { useTransactionStore } from '@/stores/useTransactionStore';
 import { useCategoryStore } from '@/stores/useCategoryStore';
 import { BubbleField } from '@/features/bubble/BubbleField';
@@ -30,6 +35,7 @@ export function HomeScreen() {
   const activePeriod = useUIStore((s) => s.activePeriod);
   const setPeriod = useUIStore((s) => s.setPeriod);
   const dragMode = useUIStore((s) => s.dragMode);
+  const activeModal = useUIStore((s) => s.activeModal);
   const exitDragMode = useUIStore((s) => s.exitDragMode);
   const openIncomeModal = useUIStore((s) => s.openIncomeModal);
   const loadByPeriod = useTransactionStore((s) => s.loadByPeriod);
@@ -92,20 +98,62 @@ export function HomeScreen() {
   }, [transactions]);
   const isEmpty = transactions.length === 0;
 
+  // Horizontal swipe on the home body steps between periods. Left = next
+  // (Today→Yesterday→Week→Month), right = previous, clamped at the ends.
+  //
+  // Reads the live period from the store instead of closing over `activePeriod`,
+  // so this callback stays referentially stable across period changes. If it
+  // changed every switch it would rebuild `swipeGesture` (below) on every swipe —
+  // and recreating a gesture that's both attached to a GestureDetector and
+  // referenced by every bubble via simultaneousWithExternalGesture tears down the
+  // in-flight handler and its relations. That's why the swipe died after one step.
+  const handleSwipe = useCallback((translationX: number) => {
+    const { activePeriod: current, setPeriod: applyPeriod } = useUIStore.getState();
+    const next = stepPeriod(current, translationX < 0 ? 1 : -1);
+    if (next !== current) {
+      applyPeriod(next);
+      Haptics.selectionAsync();
+    }
+  }, []);
+
+  // Commit on release (onEnd), reading direction from translationX — the gesture's
+  // net horizontal travel. We can't read it in onStart: at the activation instant
+  // the onStart payload's translationX is still ~0, so its sign was always
+  // non-negative and every swipe stepped the same way (toward Today — you could
+  // never go Today→Yesterday). onEnd fires once, and only after activeOffsetX has
+  // activated the pan, so one committed swipe = exactly one step. activeOffsetX
+  // keeps stationary taps working through the nested bubble/PeriodBar detectors;
+  // the pan is disabled in drag mode (bubble repositioning owns it) and while the
+  // numpad is open.
+  const swipeGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .activeOffsetX([-GESTURE.SWIPE_ACTIVATE_OFFSET, GESTURE.SWIPE_ACTIVATE_OFFSET])
+        .enabled(!dragMode && activeModal === null)
+        .onEnd((e) => {
+          runOnJS(handleSwipe)(e.translationX);
+        }),
+    [dragMode, activeModal, handleSwipe],
+  );
+
   return (
     <View style={[styles.container, { backgroundColor: colors.bg.primary, paddingTop: insets.top + 8 }]}>
       {/* Ambient room lighting — soft radial color halos behind everything. */}
       <AmbientBloom />
 
-      <PeriodBar active={activePeriod} onChange={setPeriod} />
-      <TotalDisplay
-        expense={expenseTotal}
-        income={incomeTotal}
-        net={netBalance}
-        onIncomePress={openIncomeModal}
-      />
+      <GestureDetector gesture={swipeGesture}>
+        <View style={styles.body}>
+          <PeriodBar active={activePeriod} onChange={setPeriod} />
+          <TotalDisplay
+            expense={expenseTotal}
+            income={incomeTotal}
+            net={netBalance}
+            onIncomePress={openIncomeModal}
+          />
 
-      <BubbleField />
+          <BubbleField swipeGesture={swipeGesture} />
+        </View>
+      </GestureDetector>
 
       {isEmpty && !dragMode ? (
         <View style={[styles.emptyHint, { bottom: insets.bottom + 112 }]} pointerEvents="none">
@@ -138,6 +186,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     overflow: 'hidden',
+  },
+  body: {
+    flex: 1,
   },
   emptyHint: {
     position: 'absolute',
