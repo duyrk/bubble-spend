@@ -2,38 +2,45 @@
 // Hosts both expense (per-category) and income (global) entry; the type toggle
 // at the top swaps between them without resetting the entered amount.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Calendar } from "@/components/ui/Calendar";
+import { GlassSurface } from "@/components/ui/GlassSurface";
+import { BLUR, RADII, SPRING, TIMING } from "@/constants/theme";
+import { useFormatCurrency } from "@/hooks/useFormatCurrency";
+import { useColors, useResolvedTheme } from "@/hooks/useTheme";
+import { useTranslation } from "@/hooks/useTranslation";
+import * as db from "@/lib/db";
+import { formatShortDate, isSameDay } from "@/lib/i18n";
+import { useCategoryStore } from "@/stores/useCategoryStore";
+import { useTransactionStore } from "@/stores/useTransactionStore";
+import { useUIStore } from "@/stores/useUIStore";
+import {
+  INCOME_CATEGORY_ID,
+  type Category,
+  type Transaction,
+  type TransactionEdit,
+  type TransactionType,
+} from "@/types";
+import * as Haptics from "expo-haptics";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Pressable,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+  type LayoutChangeEvent,
+} from "react-native";
 import Animated, {
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
   withTiming,
-} from 'react-native-reanimated';
-import * as Haptics from 'expo-haptics';
-import { useFormatCurrency } from '@/hooks/useFormatCurrency';
-import { useTranslation } from '@/hooks/useTranslation';
-import { useColors, useResolvedTheme } from '@/hooks/useTheme';
-import { useUIStore } from '@/stores/useUIStore';
-import { useCategoryStore } from '@/stores/useCategoryStore';
-import { useTransactionStore } from '@/stores/useTransactionStore';
-import * as db from '@/lib/db';
-import { BLUR, RADII, SPRING, TIMING } from '@/constants/theme';
-import { GlassSurface } from '@/components/ui/GlassSurface';
-import { Calendar } from '@/components/ui/Calendar';
-import { CategoryPicker } from './CategoryPicker';
-import { NoteEditor } from './NoteEditor';
-import { formatShortDate, isSameDay } from '@/lib/i18n';
-import {
-  INCOME_CATEGORY_ID,
-  type TransactionType,
-  type Transaction,
-  type TransactionEdit,
-  type Category,
-} from '@/types';
+} from "react-native-reanimated";
+import { CategoryPicker } from "./CategoryPicker";
+import { NoteEditor } from "./NoteEditor";
 
-const MODAL_HEIGHT = 560;
-const INCOME_COLOR = '#3DB882';
+const INCOME_COLOR = "#3DB882";
 
 // Stamp a backdated entry at the current wall-clock time on the chosen day so it
 // lands in the right day bucket and sorts naturally; today → exactly now.
@@ -69,7 +76,19 @@ interface NumpadModalProps {
   onEditConfirm?: (id: string, fields: TransactionEdit) => void;
 }
 
-const KEYS: string[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '000', '0'];
+const KEYS: string[] = [
+  "1",
+  "2",
+  "3",
+  "4",
+  "5",
+  "6",
+  "7",
+  "8",
+  "9",
+  "000",
+  "0",
+];
 
 export function NumpadModal({
   onTransactionConfirmed,
@@ -86,13 +105,14 @@ export function NumpadModal({
 
   const activeModal = useUIStore((s) => s.activeModal);
   const closeModal = useUIStore((s) => s.closeModal);
+  const setSheetVisible = useUIStore((s) => s.setSheetVisible);
   const categories = useCategoryStore((s) => s.categories);
   const add = useTransactionStore((s) => s.add);
 
   const editing = editMode === true;
 
-  const [amount, setAmount] = useState('0');
-  const [txType, setTxType] = useState<TransactionType>('expense');
+  const [amount, setAmount] = useState("0");
+  const [txType, setTxType] = useState<TransactionType>("expense");
   const [recentAmounts, setRecentAmounts] = useState<number[]>([]);
   // Backdating — create flow defaults to today on open; edit flow seeds from the
   // transaction. Picking a day keeps the original time-of-day on edit.
@@ -101,7 +121,7 @@ export function NumpadModal({
   // Edit-only state: the (re-assignable) category, the note text, and which
   // editor overlay is open.
   const [editCategoryId, setEditCategoryId] = useState<string | null>(null);
-  const [note, setNote] = useState('');
+  const [note, setNote] = useState("");
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [showNoteEditor, setShowNoteEditor] = useState(false);
 
@@ -111,7 +131,7 @@ export function NumpadModal({
   const isOpen = editing ? editTransaction != null : activeModal !== null;
   const createSourceId = activeModal?.categoryId ?? null;
   const sourceCategory = editing
-    ? categories.find((c) => c.id === editCategoryId) ?? editCategory
+    ? (categories.find((c) => c.id === editCategoryId) ?? editCategory)
     : createSourceId
       ? categories.find((c) => c.id === createSourceId)
       : undefined;
@@ -126,9 +146,9 @@ export function NumpadModal({
   // expense, the global income bucket for income, none while editing.
   const recentSourceId = editing
     ? null
-    : txType === 'income'
+    : txType === "income"
       ? INCOME_CATEGORY_ID
-      : sourceCategory?.id ?? null;
+      : (sourceCategory?.id ?? null);
 
   // Reset amount + type each time the create modal is (re)opened. Switching the
   // type *while* open keeps the typed amount; that's handled by setTxType below.
@@ -136,12 +156,12 @@ export function NumpadModal({
   useEffect(() => {
     if (editing) return;
     const key = activeModal
-      ? `${activeModal.categoryId ?? 'income'}:${activeModal.defaultType}`
+      ? `${activeModal.categoryId ?? "income"}:${activeModal.defaultType}`
       : null;
     if (key !== prevActiveModalKey.current) {
       prevActiveModalKey.current = key;
       if (activeModal !== null) {
-        setAmount('0');
+        setAmount("0");
         setTxType(activeModal.defaultType);
         setSelectedDate(new Date());
         setShowCalendar(false);
@@ -161,7 +181,7 @@ export function NumpadModal({
         setAmount(String(Math.round(editTransaction.amount)));
         setTxType(editTransaction.type);
         setEditCategoryId(editTransaction.categoryId);
-        setNote(editTransaction.note ?? '');
+        setNote(editTransaction.note ?? "");
         setSelectedDate(new Date(editTransaction.transactedAt));
         setShowCalendar(false);
         setShowCategoryPicker(false);
@@ -189,7 +209,7 @@ export function NumpadModal({
   const handleKey = useCallback((key: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setAmount((prev) => {
-      if (prev === '0') return key === '000' ? '0' : key;
+      if (prev === "0") return key === "000" ? "0" : key;
       const next = prev + key;
       // 10-digit cap matches PRD — enough for VND million-scale entries
       return next.length > 10 ? next.slice(0, 10) : next;
@@ -198,7 +218,7 @@ export function NumpadModal({
 
   const handleDelete = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setAmount((prev) => (prev.length <= 1 ? '0' : prev.slice(0, -1)));
+    setAmount((prev) => (prev.length <= 1 ? "0" : prev.slice(0, -1)));
   }, []);
 
   const applyRecent = useCallback((value: number) => {
@@ -229,9 +249,9 @@ export function NumpadModal({
         onEditConfirm?.(editTransaction.id, {
           amount: value,
           categoryId:
-            editTransaction.type === 'income'
+            editTransaction.type === "income"
               ? editTransaction.categoryId
-              : editCategoryId ?? editTransaction.categoryId,
+              : (editCategoryId ?? editTransaction.categoryId),
           transactedAt,
           note: trimmedNote.length > 0 ? trimmedNote : undefined,
         });
@@ -247,21 +267,21 @@ export function NumpadModal({
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     const at = timestampFor(selectedDate);
-    if (txType === 'income') {
-      const tx = add(INCOME_CATEGORY_ID, value, 'income', undefined, at);
+    if (txType === "income") {
+      const tx = add(INCOME_CATEGORY_ID, value, "income", undefined, at);
       // For income fireworks we fire near the top-right (income pill location).
       // The Home screen handles positioning when it gets no source category.
       if (onTransactionConfirmed) {
-        onTransactionConfirmed(INCOME_CATEGORY_ID, 80, 18, 'income', tx.id);
+        onTransactionConfirmed(INCOME_CATEGORY_ID, 80, 18, "income", tx.id);
       }
     } else if (sourceCategory) {
-      const tx = add(sourceCategory.id, value, 'expense', undefined, at);
+      const tx = add(sourceCategory.id, value, "expense", undefined, at);
       if (onTransactionConfirmed) {
         onTransactionConfirmed(
           sourceCategory.id,
           sourceCategory.positionX,
           sourceCategory.positionY,
-          'expense',
+          "expense",
           tx.id,
         );
       }
@@ -294,24 +314,55 @@ export function NumpadModal({
   const setExpense = useCallback(() => {
     if (expenseDisabled) return;
     Haptics.selectionAsync();
-    setTxType('expense');
+    setTxType("expense");
   }, [expenseDisabled]);
 
   const setIncome = useCallback(() => {
     if (incomeDisabled) return;
     Haptics.selectionAsync();
-    setTxType('income');
+    setTxType("income");
   }, [incomeDisabled]);
 
   const backdropStyle = useAnimatedStyle(() => ({
     opacity: withTiming(isOpen ? 1 : 0, { duration: TIMING.normal }),
-    pointerEvents: isOpen ? ('auto' as const) : ('none' as const),
+    pointerEvents: isOpen ? ("auto" as const) : ("none" as const),
   }));
 
+  // The sheet is content-sized and anchored to the bottom, so the distance to
+  // push it fully off-screen is just its own laid-out height — measured via
+  // onLayout rather than guessed. Until the first layout pass we fall back to a
+  // full window height, which is guaranteed off-screen for any content.
+  const { height: windowHeight } = useWindowDimensions();
+  const hiddenOffset = useSharedValue(windowHeight);
+  const sheetOffset = useSharedValue(windowHeight);
+
+  const handleSheetLayout = useCallback(
+    (e: LayoutChangeEvent) => {
+      hiddenOffset.value = e.nativeEvent.layout.height;
+    },
+    [hiddenOffset],
+  );
+
+  // Slide the sheet in/out and keep the tab bar hidden for the whole journey.
+  // On open we flag the bar hidden immediately; on close we only un-hide once the
+  // slide-out spring settles, so the bar never pops back over the descending sheet.
+  useEffect(() => {
+    if (isOpen) {
+      setSheetVisible(true);
+      sheetOffset.value = withSpring(0, SPRING.sheet);
+    } else {
+      sheetOffset.value = withSpring(
+        hiddenOffset.value,
+        SPRING.sheet,
+        (finished) => {
+          if (finished) runOnJS(setSheetVisible)(false);
+        },
+      );
+    }
+  }, [isOpen, setSheetVisible, sheetOffset, hiddenOffset]);
+
   const modalStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateY: withSpring(isOpen ? 0 : MODAL_HEIGHT + 60, SPRING.sheet) },
-    ],
+    transform: [{ translateY: sheetOffset.value }],
   }));
 
   const amountStyle = useAnimatedStyle(() => ({
@@ -323,25 +374,36 @@ export function NumpadModal({
   const isZero = displayValue === 0;
 
   const sheetTint =
-    resolvedTheme === 'light' ? 'rgba(255,255,255,0.72)' : 'rgba(17,17,28,0.72)';
+    resolvedTheme === "light"
+      ? "rgba(255,255,255,0.72)"
+      : "rgba(17,17,28,0.72)";
   const confirmRim =
-    resolvedTheme === 'light' ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.25)';
+    resolvedTheme === "light"
+      ? "rgba(255,255,255,0.45)"
+      : "rgba(255,255,255,0.25)";
   const toggleTrack =
-    resolvedTheme === 'light' ? 'rgba(13,13,20,0.06)' : 'rgba(255,255,255,0.06)';
+    resolvedTheme === "light"
+      ? "rgba(13,13,20,0.06)"
+      : "rgba(255,255,255,0.06)";
   const toggleActiveFill =
-    resolvedTheme === 'light' ? 'rgba(13,13,20,0.10)' : 'rgba(255,255,255,0.14)';
+    resolvedTheme === "light"
+      ? "rgba(13,13,20,0.10)"
+      : "rgba(255,255,255,0.14)";
   const toggleInactiveText =
-    resolvedTheme === 'light' ? 'rgba(13,13,20,0.40)' : 'rgba(255,255,255,0.35)';
+    resolvedTheme === "light"
+      ? "rgba(13,13,20,0.40)"
+      : "rgba(255,255,255,0.35)";
 
-  const headerEmoji = txType === 'income' ? '💰' : sourceCategory?.emoji ?? '';
+  const headerEmoji =
+    txType === "income" ? "💰" : (sourceCategory?.emoji ?? "");
   const headerLabel =
-    txType === 'income'
-      ? t('incomeLabel')
+    txType === "income"
+      ? t("incomeLabel")
       : sourceCategory
         ? sourceCategory.name
-        : '';
+        : "";
 
-  const confirmColor = txType === 'income' ? INCOME_COLOR : colors.accent;
+  const confirmColor = txType === "income" ? INCOME_COLOR : colors.accent;
 
   // Date pill label — "Today"/"Yesterday" for the common cases, else a short date.
   const todayDate = new Date();
@@ -351,9 +413,9 @@ export function NumpadModal({
     todayDate.getDate() - 1,
   );
   const dateLabel = isSameDay(selectedDate, todayDate)
-    ? t('today')
+    ? t("today")
     : isSameDay(selectedDate, yesterdayDate)
-      ? t('yesterday')
+      ? t("yesterday")
       : formatShortDate(selectedDate, language);
 
   return (
@@ -362,7 +424,10 @@ export function NumpadModal({
         <Pressable style={StyleSheet.absoluteFill} onPress={handleCancel} />
       </Animated.View>
 
-      <Animated.View style={[styles.modalWrapper, modalStyle]}>
+      <Animated.View
+        onLayout={handleSheetLayout}
+        style={[styles.modalWrapper, modalStyle]}
+      >
         <GlassSurface
           intensity={BLUR.sheet}
           borderRadius={RADII.sheet}
@@ -371,17 +436,24 @@ export function NumpadModal({
           style={styles.sheetGlass}
         >
           <View style={styles.modalSurface}>
-            <View style={[styles.handle, { backgroundColor: colors.glass.borderStrong }]} />
+            <View
+              style={[
+                styles.handle,
+                { backgroundColor: colors.glass.borderStrong },
+              ]}
+            />
 
             {/* Type toggle pill */}
-            <View style={[styles.toggleTrack, { backgroundColor: toggleTrack }]}>
+            <View
+              style={[styles.toggleTrack, { backgroundColor: toggleTrack }]}
+            >
               <Pressable
                 onPress={setExpense}
                 disabled={expenseDisabled}
                 style={[
                   styles.toggleSegment,
-                  txType === 'expense' && { backgroundColor: toggleActiveFill },
-                  expenseDisabled && txType !== 'expense' && { opacity: 0.35 },
+                  txType === "expense" && { backgroundColor: toggleActiveFill },
+                  expenseDisabled && txType !== "expense" && { opacity: 0.35 },
                 ]}
               >
                 <Text
@@ -389,12 +461,14 @@ export function NumpadModal({
                     styles.toggleLabel,
                     {
                       color:
-                        txType === 'expense' ? colors.text.primary : toggleInactiveText,
-                      fontWeight: txType === 'expense' ? '700' : '600',
+                        txType === "expense"
+                          ? colors.text.primary
+                          : toggleInactiveText,
+                      fontWeight: txType === "expense" ? "700" : "600",
                     },
                   ]}
                 >
-                  {t('expense')}
+                  {t("expense")}
                 </Text>
               </Pressable>
               <Pressable
@@ -402,8 +476,8 @@ export function NumpadModal({
                 disabled={incomeDisabled}
                 style={[
                   styles.toggleSegment,
-                  txType === 'income' && { backgroundColor: toggleActiveFill },
-                  incomeDisabled && txType !== 'income' && { opacity: 0.35 },
+                  txType === "income" && { backgroundColor: toggleActiveFill },
+                  incomeDisabled && txType !== "income" && { opacity: 0.35 },
                 ]}
               >
                 <Text
@@ -411,17 +485,19 @@ export function NumpadModal({
                     styles.toggleLabel,
                     {
                       color:
-                        txType === 'income' ? colors.text.primary : toggleInactiveText,
-                      fontWeight: txType === 'income' ? '700' : '600',
+                        txType === "income"
+                          ? colors.text.primary
+                          : toggleInactiveText,
+                      fontWeight: txType === "income" ? "700" : "600",
                     },
                   ]}
                 >
-                  {t('income')}
+                  {t("income")}
                 </Text>
               </Pressable>
             </View>
 
-            {editing && txType === 'expense' ? (
+            {editing && txType === "expense" ? (
               <Pressable
                 onPress={() => {
                   Haptics.selectionAsync();
@@ -430,21 +506,29 @@ export function NumpadModal({
                 style={[
                   styles.editPill,
                   styles.categoryPill,
-                  { backgroundColor: colors.glass.base, borderColor: colors.glass.border },
+                  {
+                    backgroundColor: colors.glass.base,
+                    borderColor: colors.glass.border,
+                  },
                 ]}
               >
                 <Text
-                  style={[styles.editPillText, { color: colors.text.secondary }]}
+                  style={[
+                    styles.editPillText,
+                    { color: colors.text.secondary },
+                  ]}
                   numberOfLines={1}
                 >
                   {sourceCategory
                     ? `${sourceCategory.emoji}  ${sourceCategory.name}  ›`
-                    : `${t('changeCategory')}  ›`}
+                    : `${t("changeCategory")}  ›`}
                 </Text>
               </Pressable>
             ) : (
-              <Text style={[styles.categoryLabel, { color: colors.text.secondary }]}>
-                {headerLabel ? `${headerEmoji}  ${headerLabel}` : ''}
+              <Text
+                style={[styles.categoryLabel, { color: colors.text.secondary }]}
+              >
+                {headerLabel ? `${headerEmoji}  ${headerLabel}` : ""}
               </Text>
             )}
 
@@ -456,11 +540,19 @@ export function NumpadModal({
                 }}
                 style={[
                   styles.editPill,
-                  { backgroundColor: colors.glass.base, borderColor: colors.glass.border },
+                  {
+                    backgroundColor: colors.glass.base,
+                    borderColor: colors.glass.border,
+                  },
                 ]}
               >
-                <Text style={[styles.editPillText, { color: colors.text.secondary }]}>
-                  📅  {dateLabel}
+                <Text
+                  style={[
+                    styles.editPillText,
+                    { color: colors.text.secondary },
+                  ]}
+                >
+                  📅 {dateLabel}
                 </Text>
               </Pressable>
 
@@ -473,17 +565,24 @@ export function NumpadModal({
                   style={[
                     styles.editPill,
                     styles.notePill,
-                    { backgroundColor: colors.glass.base, borderColor: colors.glass.border },
+                    {
+                      backgroundColor: colors.glass.base,
+                      borderColor: colors.glass.border,
+                    },
                   ]}
                 >
                   <Text
                     style={[
                       styles.editPillText,
-                      { color: note ? colors.text.secondary : colors.text.tertiary },
+                      {
+                        color: note
+                          ? colors.text.secondary
+                          : colors.text.tertiary,
+                      },
                     ]}
                     numberOfLines={1}
                   >
-                    📝  {note ? note : t('addNote')}
+                    📝 {note ? note : t("addNote")}
                   </Text>
                 </Pressable>
               ) : null}
@@ -491,21 +590,27 @@ export function NumpadModal({
 
             <Animated.View style={[styles.displayRow, amountStyle]}>
               {meta.symbolBefore ? (
-                <Text style={[styles.currency, { color: colors.text.tertiary }]}>
-                  {meta.symbol}{' '}
+                <Text
+                  style={[styles.currency, { color: colors.text.tertiary }]}
+                >
+                  {meta.symbol}{" "}
                 </Text>
               ) : null}
               <Text
                 style={[
                   styles.displayAmount,
-                  { color: isZero ? colors.text.tertiary : colors.text.primary },
+                  {
+                    color: isZero ? colors.text.tertiary : colors.text.primary,
+                  },
                 ]}
               >
                 {displayAmount}
               </Text>
               {!meta.symbolBefore ? (
-                <Text style={[styles.currency, { color: colors.text.tertiary }]}>
-                  {' '}
+                <Text
+                  style={[styles.currency, { color: colors.text.tertiary }]}
+                >
+                  {" "}
                   {meta.symbol}
                 </Text>
               ) : null}
@@ -519,12 +624,18 @@ export function NumpadModal({
                     onPress={() => applyRecent(value)}
                     style={({ pressed }) => [
                       styles.recentChip,
-                      { backgroundColor: colors.glass.base, borderColor: colors.glass.border },
+                      {
+                        backgroundColor: colors.glass.base,
+                        borderColor: colors.glass.border,
+                      },
                       pressed && { backgroundColor: colors.glass.borderStrong },
                     ]}
                   >
                     <Text
-                      style={[styles.recentChipText, { color: colors.text.secondary }]}
+                      style={[
+                        styles.recentChipText,
+                        { color: colors.text.secondary },
+                      ]}
                       numberOfLines={1}
                     >
                       {format(value)}
@@ -536,7 +647,11 @@ export function NumpadModal({
 
             <View style={styles.numpad}>
               {KEYS.map((key) => (
-                <NumpadKey key={key} label={key} onPress={() => handleKey(key)} />
+                <NumpadKey
+                  key={key}
+                  label={key}
+                  onPress={() => handleKey(key)}
+                />
               ))}
               <NumpadKey label="⌫" onPress={handleDelete} secondary />
             </View>
@@ -544,7 +659,8 @@ export function NumpadModal({
             <Pressable
               disabled={isZero}
               onPress={() => {
-                if (!isZero) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                if (!isZero)
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                 handleConfirm();
               }}
               style={({ pressed }) => [
@@ -556,12 +672,18 @@ export function NumpadModal({
                 },
               ]}
             >
-              <Text style={styles.confirmText}>{t('doneCheck')}</Text>
+              <Text style={styles.confirmText}>{t("doneCheck")}</Text>
             </Pressable>
 
-            <Pressable onPress={handleCancel} style={styles.cancelBtn} hitSlop={6}>
-              <Text style={[styles.cancelText, { color: colors.text.tertiary }]}>
-                {t('cancel')}
+            <Pressable
+              onPress={handleCancel}
+              style={styles.cancelBtn}
+              hitSlop={6}
+            >
+              <Text
+                style={[styles.cancelText, { color: colors.text.tertiary }]}
+              >
+                {t("cancel")}
               </Text>
             </Pressable>
           </View>
@@ -597,7 +719,7 @@ export function NumpadModal({
         <CategoryPicker
           categories={categories}
           selectedId={editCategoryId}
-          title={t('changeCategory')}
+          title={t("changeCategory")}
           onSelect={(id) => {
             setEditCategoryId(id);
             setShowCategoryPicker(false);
@@ -609,8 +731,8 @@ export function NumpadModal({
       {editing && isOpen && showNoteEditor ? (
         <NoteEditor
           initialValue={note}
-          placeholder={t('notePlaceholder')}
-          saveLabel={t('save')}
+          placeholder={t("notePlaceholder")}
+          saveLabel={t("save")}
           accentColor={confirmColor}
           onSave={(v) => {
             setNote(v);
@@ -641,11 +763,17 @@ function NumpadKey({
   }));
 
   const pressedColor =
-    resolvedTheme === 'light' ? 'rgba(13,13,20,0.10)' : 'rgba(255,255,255,0.18)';
+    resolvedTheme === "light"
+      ? "rgba(13,13,20,0.10)"
+      : "rgba(255,255,255,0.18)";
   const baseColor =
-    resolvedTheme === 'light' ? 'rgba(13,13,20,0.04)' : 'rgba(255,255,255,0.08)';
+    resolvedTheme === "light"
+      ? "rgba(13,13,20,0.04)"
+      : "rgba(255,255,255,0.08)";
   const keyBorder =
-    resolvedTheme === 'light' ? 'rgba(13,13,20,0.08)' : 'rgba(255,255,255,0.10)';
+    resolvedTheme === "light"
+      ? "rgba(13,13,20,0.08)"
+      : "rgba(255,255,255,0.10)";
 
   return (
     <Animated.View style={[styles.keyWrapper, style]}>
@@ -680,11 +808,11 @@ function NumpadKey({
 const styles = StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: "rgba(0,0,0,0.55)",
     zIndex: 10,
   },
   modalWrapper: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
@@ -703,14 +831,14 @@ const styles = StyleSheet.create({
     width: 36,
     height: 4,
     borderRadius: 2,
-    alignSelf: 'center',
+    alignSelf: "center",
     marginBottom: 14,
   },
   toggleTrack: {
-    flexDirection: 'row',
+    flexDirection: "row",
     borderRadius: 99,
     padding: 3,
-    alignSelf: 'center',
+    alignSelf: "center",
     marginBottom: 12,
   },
   toggleSegment: {
@@ -718,23 +846,23 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     borderRadius: 99,
     minWidth: 110,
-    alignItems: 'center',
+    alignItems: "center",
   },
   toggleLabel: {
     fontSize: 12,
     letterSpacing: 0.3,
   },
   categoryLabel: {
-    textAlign: 'center',
+    textAlign: "center",
     fontSize: 13,
     marginBottom: 6,
     letterSpacing: 0.2,
     minHeight: 16,
   },
   editPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "center",
     paddingHorizontal: 14,
     paddingVertical: 6,
     borderRadius: 99,
@@ -742,17 +870,17 @@ const styles = StyleSheet.create({
   },
   editPillText: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: "600",
     letterSpacing: 0.2,
   },
   categoryPill: {
     marginBottom: 10,
-    maxWidth: '80%',
+    maxWidth: "80%",
   },
   pillRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    justifyContent: "center",
+    flexWrap: "wrap",
     gap: 8,
     marginBottom: 14,
   },
@@ -762,37 +890,37 @@ const styles = StyleSheet.create({
   calendarOverlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     paddingHorizontal: 24,
   },
   calendarBackdrop: {
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: "rgba(0,0,0,0.5)",
   },
   calendarCard: {
-    width: '100%',
+    width: "100%",
     maxWidth: 360,
     padding: 16,
   },
   displayRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "baseline",
+    justifyContent: "center",
     marginBottom: 18,
     minHeight: 56,
   },
   currency: {
     fontSize: 22,
-    fontWeight: '300',
+    fontWeight: "300",
   },
   displayAmount: {
     fontSize: 52,
-    fontWeight: '200',
+    fontWeight: "200",
     letterSpacing: -1.5,
   },
   recentRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
+    flexDirection: "row",
+    justifyContent: "center",
     gap: 8,
     marginBottom: 16,
     minHeight: 34,
@@ -802,49 +930,49 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     borderRadius: 99,
     borderWidth: 0.5,
-    maxWidth: '33%',
+    maxWidth: "33%",
   },
   recentChipText: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   numpad: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8,
   },
   keyWrapper: {
-    width: '31.5%',
+    width: "31.5%",
   },
   key: {
     borderRadius: RADII.button,
     paddingVertical: 16,
-    alignItems: 'center',
+    alignItems: "center",
     borderWidth: 0.5,
   },
   keyText: {
     fontSize: 22,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   keyTextSecondary: {
     fontSize: 18,
   },
   confirmBtn: {
-    width: '100%',
+    width: "100%",
     borderRadius: RADII.pill,
     paddingVertical: 16,
-    alignItems: 'center',
+    alignItems: "center",
     marginTop: 12,
     borderTopWidth: 1,
   },
   confirmText: {
     fontSize: 17,
-    fontWeight: '600',
-    color: '#fff',
+    fontWeight: "600",
+    color: "#fff",
     letterSpacing: 0.3,
   },
   cancelBtn: {
-    alignItems: 'center',
+    alignItems: "center",
     marginTop: 10,
     padding: 4,
   },

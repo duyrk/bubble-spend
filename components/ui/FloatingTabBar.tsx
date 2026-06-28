@@ -28,12 +28,12 @@ export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarP
   const insets = useSafeAreaInsets();
   const colors = useColors();
   const resolvedTheme = useResolvedTheme();
-  const activeModal = useUIStore((s) => s.activeModal);
-  const numpadEditing = useUIStore((s) => s.numpadEditing);
+  const sheetVisible = useUIStore((s) => s.sheetVisible);
 
-  // Hide the bar whenever any numpad sheet is up — the create flow (activeModal)
-  // or the History edit flow (numpadEditing) — so it never overlaps the sheet.
-  if (activeModal !== null || numpadEditing) return null;
+  // Hide the bar the whole time the numpad sheet is on screen — including its
+  // slide-out animation — so it never overlaps the sheet. The NumpadModal keeps
+  // `sheetVisible` true until the close animation fully settles.
+  if (sheetVisible) return null;
 
   // Kept translucent enough that the blur reads through — a near-opaque tint
   // flattens the glass into a plain milky pill.

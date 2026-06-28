@@ -9,6 +9,7 @@ export const GYROSCOPE = {
 export const GESTURE = {
   TAP_MAX_DURATION: 500, // ms — tap vs long-press threshold
   DRAG_ACTIVATION_DELAY: 500, // ms — long press to enter drag mode
+  SWIPE_ACTIVATE_OFFSET: 20, // horizontal px before a Home period swipe commits
 } as const;
 
 export const DB_NAME = 'bubble-spend.db';
