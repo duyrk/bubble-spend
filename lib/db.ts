@@ -2,7 +2,19 @@
 
 import * as SQLite from 'expo-sqlite';
 import { DB_NAME } from '@/constants/config';
-import type { Category, Transaction, SyncQueueItem, TransactionType, TransactionEdit } from '@/types';
+import type {
+  Category,
+  Transaction,
+  SyncQueueItem,
+  TransactionType,
+  TransactionEdit,
+  MonthlyTotal,
+  WeeklyTotal,
+  DailyTotal,
+  CategoryTotal,
+  TransactionWithCategory,
+  BubbleColorKey,
+} from '@/types';
 
 let _db: SQLite.SQLiteDatabase | null = null;
 
@@ -221,6 +233,188 @@ export function replaceAllData(categories: Category[], transactions: Transaction
     for (const cat of categories) insertCategory(cat);
     for (const tx of transactions) insertTransaction(tx);
   });
+}
+
+// --- Insight queries (year → month → week → day drill-down) ---
+// All grouping/aggregation happens in SQL; the data hook fills the empty buckets
+// and derives peaks/averages. Dates are bucketed in the device's local timezone
+// (datetime(..., 'localtime')) so a transaction lands in the day the user saw.
+
+export function getMonthlyTotals(year: number): MonthlyTotal[] {
+  const db = getDb();
+  const rows = db.getAllSync<{ month: number; expense: number | null; income: number | null }>(
+    `SELECT
+       CAST(strftime('%m', datetime(transacted_at/1000, 'unixepoch', 'localtime')) AS INTEGER) AS month,
+       SUM(CASE WHEN category_id != '__income__' THEN amount ELSE 0 END) AS expense,
+       SUM(CASE WHEN category_id  = '__income__' THEN amount ELSE 0 END) AS income
+     FROM transactions
+     WHERE strftime('%Y', datetime(transacted_at/1000, 'unixepoch', 'localtime')) = ?
+     GROUP BY month
+     ORDER BY month`,
+    [String(year)],
+  );
+  return rows.map((r) => ({ month: r.month, expense: r.expense ?? 0, income: r.income ?? 0 }));
+}
+
+export function getWeeklyTotals(year: number, month: number): WeeklyTotal[] {
+  const db = getDb();
+  const rows = db.getAllSync<{ week_idx: number; expense: number | null; income: number | null }>(
+    `SELECT
+       MIN(
+         CAST((CAST(strftime('%d', datetime(transacted_at/1000,'unixepoch','localtime')) AS INTEGER) - 1) / 7 AS INTEGER),
+         3
+       ) AS week_idx,
+       SUM(CASE WHEN category_id != '__income__' THEN amount ELSE 0 END) AS expense,
+       SUM(CASE WHEN category_id  = '__income__' THEN amount ELSE 0 END) AS income
+     FROM transactions
+     WHERE strftime('%Y-%m', datetime(transacted_at/1000,'unixepoch','localtime'))
+           = printf('%04d-%02d', ?, ?)
+     GROUP BY week_idx
+     ORDER BY week_idx`,
+    [year, month],
+  );
+  return rows.map((r) => ({ weekIdx: r.week_idx, expense: r.expense ?? 0, income: r.income ?? 0 }));
+}
+
+export function getDailyTotals(year: number, month: number, weekIdx: number): DailyTotal[] {
+  const db = getDb();
+  const startDay = weekIdx * 7 + 1;
+  const endDay = weekIdx === 3 ? 31 : (weekIdx + 1) * 7;
+  const rows = db.getAllSync<{
+    day: number;
+    weekday: number;
+    expense: number | null;
+    income: number | null;
+  }>(
+    `SELECT
+       CAST(strftime('%d', datetime(transacted_at/1000,'unixepoch','localtime')) AS INTEGER) AS day,
+       CAST(strftime('%w', datetime(transacted_at/1000,'unixepoch','localtime')) AS INTEGER) AS weekday,
+       SUM(CASE WHEN category_id != '__income__' THEN amount ELSE 0 END) AS expense,
+       SUM(CASE WHEN category_id  = '__income__' THEN amount ELSE 0 END) AS income
+     FROM transactions
+     WHERE strftime('%Y-%m', datetime(transacted_at/1000,'unixepoch','localtime'))
+             = printf('%04d-%02d', ?, ?)
+       AND CAST(strftime('%d', datetime(transacted_at/1000,'unixepoch','localtime')) AS INTEGER)
+             BETWEEN ? AND ?
+     GROUP BY day
+     ORDER BY day`,
+    [year, month, startDay, endDay],
+  );
+  return rows.map((r) => ({
+    day: r.day,
+    weekday: r.weekday,
+    expense: r.expense ?? 0,
+    income: r.income ?? 0,
+  }));
+}
+
+export function getTransactionsByDate(
+  year: number,
+  month: number,
+  day: number,
+): TransactionWithCategory[] {
+  const db = getDb();
+  const rows = db.getAllSync<{
+    id: string;
+    category_id: string;
+    amount: number;
+    type: string | null;
+    transacted_at: number;
+    note: string | null;
+    synced: number;
+    category_name: string;
+    emoji: string;
+    color_key: string;
+  }>(
+    `SELECT
+       t.id, t.amount, t.transacted_at, t.note, t.category_id, t.synced, t.type,
+       c.name AS category_name, c.emoji, c.color_key
+     FROM transactions t
+     JOIN categories c ON t.category_id = c.id
+     WHERE strftime('%Y-%m-%d', datetime(t.transacted_at/1000,'unixepoch','localtime'))
+           = printf('%04d-%02d-%02d', ?, ?, ?)
+     ORDER BY t.transacted_at DESC`,
+    [year, month, day],
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    categoryId: r.category_id,
+    amount: r.amount,
+    type: (r.type === 'income' ? 'income' : 'expense') as TransactionType,
+    transactedAt: r.transacted_at,
+    note: r.note ?? undefined,
+    synced: r.synced === 1,
+    categoryName: r.category_name,
+    emoji: r.emoji,
+    colorKey: r.color_key as BubbleColorKey,
+  }));
+}
+
+export function getCategoryTotalsByMonth(year: number, month: number): CategoryTotal[] {
+  const db = getDb();
+  const rows = db.getAllSync<{
+    category_id: string;
+    name: string;
+    emoji: string;
+    color_key: string;
+    expense: number | null;
+  }>(
+    `SELECT
+       t.category_id, c.name, c.emoji, c.color_key,
+       SUM(t.amount) AS expense
+     FROM transactions t
+     JOIN categories c ON t.category_id = c.id
+     WHERE strftime('%Y-%m', datetime(t.transacted_at/1000,'unixepoch','localtime'))
+           = printf('%04d-%02d', ?, ?)
+       AND t.category_id != '__income__'
+     GROUP BY t.category_id
+     ORDER BY expense DESC`,
+    [year, month],
+  );
+  return rows.map((r) => ({
+    categoryId: r.category_id,
+    name: r.name,
+    emoji: r.emoji,
+    colorKey: r.color_key as BubbleColorKey,
+    expense: r.expense ?? 0,
+  }));
+}
+
+export function getCategoryTotalsByWeek(
+  year: number,
+  month: number,
+  startDay: number,
+  endDay: number,
+): CategoryTotal[] {
+  const db = getDb();
+  const rows = db.getAllSync<{
+    category_id: string;
+    name: string;
+    emoji: string;
+    color_key: string;
+    expense: number | null;
+  }>(
+    `SELECT
+       t.category_id, c.name, c.emoji, c.color_key,
+       SUM(t.amount) AS expense
+     FROM transactions t
+     JOIN categories c ON t.category_id = c.id
+     WHERE strftime('%Y-%m', datetime(t.transacted_at/1000,'unixepoch','localtime'))
+           = printf('%04d-%02d', ?, ?)
+       AND t.category_id != '__income__'
+       AND CAST(strftime('%d', datetime(t.transacted_at/1000,'unixepoch','localtime')) AS INTEGER)
+           BETWEEN ? AND ?
+     GROUP BY t.category_id
+     ORDER BY expense DESC`,
+    [year, month, startDay, endDay],
+  );
+  return rows.map((r) => ({
+    categoryId: r.category_id,
+    name: r.name,
+    emoji: r.emoji,
+    colorKey: r.color_key as BubbleColorKey,
+    expense: r.expense ?? 0,
+  }));
 }
 
 // --- Sync queue ---

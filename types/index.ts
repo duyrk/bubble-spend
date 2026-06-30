@@ -60,4 +60,41 @@ export type SyncQueueItem = {
   createdAt: number;
 };
 
+// --- Insight (year → month → week → day drill-down) aggregates ---
+// Each level's totals come straight from a GROUP BY query in lib/db.ts. Buckets
+// with no activity are absent from the rows (the data hook fills the gaps).
+
+export type MonthlyTotal = {
+  month: number; // 1-12
+  expense: number;
+  income: number;
+};
+
+export type WeeklyTotal = {
+  weekIdx: number; // 0-3 (days 1–7, 8–14, 15–21, 22–end)
+  expense: number;
+  income: number;
+};
+
+export type DailyTotal = {
+  day: number; // day of month (1-31)
+  weekday: number; // 0=Sun, 1=Mon … 6=Sat
+  expense: number;
+  income: number;
+};
+
+export type CategoryTotal = {
+  categoryId: string;
+  name: string;
+  emoji: string;
+  colorKey: BubbleColorKey;
+  expense: number;
+};
+
+export type TransactionWithCategory = Transaction & {
+  categoryName: string;
+  emoji: string;
+  colorKey: BubbleColorKey;
+};
+
 export type { LocaleCode } from '@/lib/i18n/defaultCategories';

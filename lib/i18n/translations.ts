@@ -132,6 +132,22 @@ const en = {
   addNote: 'Add note',
   notePlaceholder: 'Add a note…',
   save: 'Save',
+
+  // Insight (year → month → week → day drill-down)
+  'insight.title': 'Year overview',
+  'insight.avgPerMonth': 'Avg / month',
+  'insight.noData': 'No data yet',
+  'insight.tapDetail': 'tap for detail',
+  'insight.tapTransactions': 'tap for transactions',
+  'insight.week': 'Week',
+  'insight.byWeek': 'By week',
+  'insight.byDay': '7 days',
+  'insight.peakDay': 'Peak day',
+  'insight.dailyAvg': 'Daily avg',
+  'insight.spendingBreakdown': 'Spending breakdown',
+  'insight.weeklySpend': 'Weekly spend',
+  'insight.noTransactions': 'No transactions',
+  'insight.transactions': 'Transactions',
 } as const;
 
 export type TranslationKey = keyof typeof en;
@@ -236,6 +252,21 @@ const vi: Record<TranslationKey, string> = {
   addNote: 'Thêm ghi chú',
   notePlaceholder: 'Thêm ghi chú…',
   save: 'Lưu',
+
+  'insight.title': 'Tổng quan năm',
+  'insight.avgPerMonth': 'TB / tháng',
+  'insight.noData': 'Chưa có dữ liệu',
+  'insight.tapDetail': 'tap để xem chi tiết',
+  'insight.tapTransactions': 'tap để xem giao dịch',
+  'insight.week': 'Tuần',
+  'insight.byWeek': 'Theo tuần',
+  'insight.byDay': '7 ngày',
+  'insight.peakDay': 'Ngày cao nhất',
+  'insight.dailyAvg': 'TB / ngày',
+  'insight.spendingBreakdown': 'Phân bổ chi tiêu',
+  'insight.weeklySpend': 'Chi tiêu theo tuần',
+  'insight.noTransactions': 'Không có giao dịch',
+  'insight.transactions': 'Giao dịch',
 };
 
 export const TRANSLATIONS: Record<Language, Record<TranslationKey, string>> = { en, vi };
