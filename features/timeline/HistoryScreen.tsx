@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, View, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect } from 'expo-router';
+import Feather from '@expo/vector-icons/Feather';
+import { router, useFocusEffect } from 'expo-router';
 import { useColors } from '@/hooks/useTheme';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
@@ -97,9 +98,20 @@ export function HistoryScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.bg.primary, paddingTop: insets.top + 8 }]}>
       <View style={styles.header}>
-        <Text style={[styles.periodLabel, { color: colors.text.tertiary }]}>
-          {t(PERIODS.find((p) => p.key === period)?.tKey ?? 'today').toUpperCase()}
-        </Text>
+        <View style={styles.titleRow}>
+          <Text style={[styles.periodLabel, { color: colors.text.tertiary }]}>
+            {t(PERIODS.find((p) => p.key === period)?.tKey ?? 'today').toUpperCase()}
+          </Text>
+          <Pressable
+            onPress={() => router.push('/insight')}
+            hitSlop={12}
+            style={styles.insightBtn}
+            accessibilityRole="button"
+            accessibilityLabel={t('insight.title')}
+          >
+            <Feather name="bar-chart-2" size={20} color={colors.text.secondary} />
+          </Pressable>
+        </View>
 
         <View style={styles.summaryRow}>
           <View style={styles.summaryCol}>
@@ -187,11 +199,23 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 10,
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
   periodLabel: {
     fontSize: 11,
     letterSpacing: 1.5,
-    marginBottom: 8,
     fontWeight: '700',
+  },
+  insightBtn: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: -6,
   },
   summaryRow: {
     flexDirection: 'row',

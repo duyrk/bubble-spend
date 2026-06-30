@@ -292,6 +292,26 @@ Export serializes a `{ app, version, exportedAt, categories, transactions }` env
 
 ---
 
+## Insight drill-down
+
+### Insight entry: chart icon in History header, not a new tab
+
+Why: The 3-tab layout (Home / History / Settings) matches usage frequency. Insight is consulted occasionally, not on every session. Adding a 4th tab would promote it above its actual role. History is the natural context — users reviewing past data are already in "analysis mode."
+
+---
+
+### Insight drill-down managed via internal Reanimated stack, not Expo Router nested navigation
+
+Why: The 3-level slide stack (year → month → week) plus the day-sheet overlay are managed as local state, not nested Expo Router routes. A local `stack: InsightLevel[]` with Reanimated shared values gives full control over the flat directional slide, lets a `frames` render-list keep the outgoing screen mounted through the transition (so it never flashes a loading skeleton on its way out), and coordinates the bottom-sheet overlay — all without spinning up extra routes (or a typed-route entry) per level. The level slide itself is deliberately flat (timing, no spring, no parallax): a springy/parallax transition read as "weird" here. The opening route push (History → Insight) is `animation: 'none'` for the same reason — the year bubbles' own entry animation provides the sense of arrival.
+
+---
+
+### Week definition: 4 groups per month (days 1–7, 8–14, 15–21, 22–end)
+
+Why: Simple, predictable, and maps cleanly to the 4-column visual. ISO week numbers would cross month boundaries, making monthly aggregation ambiguous. The last group absorbs 7–10 days depending on month length — acceptable trade-off for a visual overview that communicates pattern, not accounting precision.
+
+---
+
 ## Transaction editing
 
 ### The edit sheet re-reads the period after a write; a date change keeps the time-of-day

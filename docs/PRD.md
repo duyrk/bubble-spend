@@ -71,6 +71,20 @@ Empty state: "No transactions yet" + hint to go log one from Home.
 
 ---
 
+### Insight (Yearly drill-down)
+
+Entry point: chart icon button in the History screen header.
+
+**Year overview** — 12 month bubbles in a 4×3 grid. Bubble size scales linearly with spending (52px base → 82px max, same formula as home). Current month has a ring indicator. Future months are dimmed and non-tappable. Year navigator (← →). Summary row: total expense / income / net for the year.
+
+**Month detail** — slides in from the right. Shows expense / income / net stats, category breakdown bars (actual DB totals), and 4 tappable week columns. Tap a week column → week detail.
+
+**Week detail** — shows 7-day bar chart (Mon–Sun), stats (total / peak day / daily avg), and category breakdown for that week. Tap a day column → day sheet.
+
+**Day sheet** — bottom sheet overlay with actual transactions for that day. Transaction list matches History screen item style. Backdrop tap to close.
+
+---
+
 ### Settings
 
 **Appearance**
@@ -135,6 +149,7 @@ Empty state: "No transactions yet" + hint to go log one from Home.
 - Undo toast on Home immediately after logging a transaction
 - Per-category spending breakdown ("Where it went") on the History screen
 - Data export / import — JSON backup of all categories + transactions via the share sheet; restore replaces all local data
+- Insight screen — year → month → week → day drill-down (chart icon in the History header)
 - Jest unit tests for the pure logic layer (currency, period, bubble size, insights, backup)
 
 ## Not Yet Implemented

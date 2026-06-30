@@ -31,6 +31,7 @@ app/
     index.tsx             Home screen entry (re-exports HomeScreen)
     history.tsx           History screen entry
     settings.tsx          Settings screen entry
+  insight.tsx             Insight screen route — pushed from History via router.push('/insight')
 
 components/
   ui/
@@ -62,6 +63,9 @@ features/
     HistoryScreen.tsx     History screen
     TransactionList.tsx   Scrollable list with date grouping
     TransactionItem.tsx   Single row — emoji, name, amount, time
+  insight/
+    InsightScreen.tsx     Full-screen container — year/month/week levels via Reanimated slide stack
+    useInsightData.ts     Per-level data loading hook (monthly, weekly, daily, category queries)
   settings/
     SettingsScreen.tsx    Settings screen
     SettingsGroup.tsx     Grouped section container
@@ -82,7 +86,7 @@ hooks/
   useTranslation.ts       t() keyed on settings language
 
 lib/
-  db.ts                   SQLite open/init + all query helpers (incl. getRecentAmounts) + type column migration
+  db.ts                   SQLite open/init + all query helpers (incl. getRecentAmounts + insight drill-down queries) + type column migration
   currency.ts             CurrencyMeta definitions + formatCurrency / formatCompact
   notifications.ts        Schedule/cancel daily reminder
   i18n/
@@ -202,6 +206,18 @@ CREATE TABLE sync_queue (
 ```
 
 All SQLite operations use `expo-sqlite` synchronous API (`execSync`, `runSync`, `getAllSync`).
+
+---
+
+## Insight Queries
+
+The Insight drill-down reads pre-aggregated totals straight from SQLite — all grouping happens in SQL (no JS aggregation), and `features/insight/useInsightData.ts` only fills empty buckets and derives peaks/averages. Dates are bucketed in the device's local timezone via `datetime(transacted_at/1000, 'unixepoch', 'localtime')` so a transaction lands in the day the user saw.
+
+- `getMonthlyTotals(year)` → `MonthlyTotal[]` — expense/income per month (1–12)
+- `getWeeklyTotals(year, month)` → `WeeklyTotal[]` — expense/income per week bucket. Week index is `min(floor((day-1)/7), 3)`, so week 3 absorbs days 22–end
+- `getDailyTotals(year, month, weekIdx)` → `DailyTotal[]` — expense/income per day, with weekday (0=Sun); the caller computes the day range from `weekIdx`
+- `getTransactionsByDate(year, month, day)` → `TransactionWithCategory[]` — that day's rows, `JOIN`ed to categories (so income rows, which have no category, are excluded)
+- `getCategoryTotalsByMonth(year, month)` / `getCategoryTotalsByWeek(year, month, startDay, endDay)` → `CategoryTotal[]` — expense-only breakdown, sorted desc
 
 ---
 
