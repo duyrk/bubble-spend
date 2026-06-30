@@ -26,11 +26,13 @@ export type Category = {
   positionX: number; // percentage 0-100
   positionY: number; // percentage 0-100
   createdAt: number;
+  budget?: number; // monthly spending cap in the currency's main unit; absent/0 = no budget
 };
 
 export type CategoryWithSize = Category & {
   size: number; // computed bubble diameter in px
   total: number; // total spend for current period
+  monthSpent: number; // current calendar-month expense total — drives the budget ring
 };
 
 export type Transaction = {

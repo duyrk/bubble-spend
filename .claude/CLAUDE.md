@@ -44,9 +44,11 @@ components/
 features/
   bubble/
     BubbleField.tsx       Positions all bubbles + gyro tilt wrapper
-    BubbleItem.tsx        Single bubble — gestures, float/wobble animations
+    BubbleItem.tsx        Single bubble — gestures, float/wobble, budget ring
     AddCategorySheet.tsx  FAB "+" button + preset/custom category bottom sheet
-    DeleteCategorySheet.tsx  Confirm sheet — long-press a bubble in drag mode to delete
+    QuickActionsMenu.tsx  iOS-style long-press menu (blurred backdrop, anchored) — Log / Set budget / Rearrange / Delete
+    BudgetSheet.tsx       Monthly-budget editor sheet (numeric input + remove)
+    DeleteCategorySheet.tsx  Confirm sheet — reached from QuickActionsMenu's "Delete"
     FolderBubble.tsx      (scaffolded, not wired)
     useBubblePhysics.ts   Spring animation for bubble size changes
     useDragGesture.ts     Drag gesture helpers
@@ -54,6 +56,7 @@ features/
     HomeScreen.tsx        Home screen — period bar, total, bubble field, numpad, fireworks
     PeriodBar.tsx         Period selector tabs (Today/Yesterday/Week/Month)
     TotalDisplay.tsx      Aggregated spend display
+    SpendingPace.tsx      Month-tab projection line (projected month-end vs budget)
   numpad/
     NumpadModal.tsx       Bottom-sheet numpad — amount entry, expense/income toggle, recent-amount chips; edit flow also edits date/category/note
     AmountDisplay.tsx     Amount display sub-component
@@ -94,6 +97,8 @@ lib/
   backup.ts               Pure backup (de)serialization + validation (unit-tested)
   backupIO.ts             Export/import orchestration (file system, share sheet, document picker, atomic DB replace)
   insights.ts             computeCategoryBreakdown — pure per-category aggregation (unit-tested)
+  budget.ts               computeBudgetStatus / totalBudget — pure budget math (unit-tested)
+  forecast.ts             projectMonthlySpend / computeMonthDelta — pure pace + MoM math (unit-tested)
   period.ts               getPeriodRange — pure period → [start, end) ms range (unit-tested)
   bubbleSize.ts           computeBubbleSize — pure bubble-size formula (unit-tested)
   notifications.ts        Schedule/cancel daily reminder
@@ -183,8 +188,8 @@ Every transaction write: SQLite → sync_queue → update in-memory state. No ne
 
 - **Max 8 bubbles** — hard limit enforced in `useCategoryStore.addCategory()`. `AddCategorySheet` hides at limit.
 - **Bubble size:** `BASE = 76px`, `MAX = 118px`, linear scale: `76 + (amt/maxAmt) × 42`. Zero spend = base size always.
-- **Gesture threshold:** tap < 500ms → open numpad | long press ≥ 500ms → enter drag mode
-- **Drag mode:** pan gesture enabled, tap/longPress disabled, tab swipe disabled
+- **Gesture threshold:** tap < 500ms → open numpad | long press ≥ 500ms → open the quick-actions menu (`QuickActionsMenu`). The long-press worklet `measure()`s the bubble's window frame and passes it to `requestBubbleActions(id, cx, top, bottom)` so the menu anchors next to the bubble. Drag mode is entered from that menu's *Rearrange* action.
+- **Drag mode:** pan gesture enabled, tap/longPress disabled, tab swipe disabled; gentle slow wobble
 - **Tab bar hides when numpad is open** — `FloatingTabBar` returns `null` when `activeModal !== null`
 - **Timestamps:** default to `Date.now()`; the create numpad has a date pill → calendar for backdating (resets to Today on open, future days disabled). Backdated entries stamp the chosen day at the current wall-clock time. The History **edit** flow edits amount, date, category (expenses only), and note — `type` stays locked; a date change preserves the transaction's original time-of-day.
 - **Position stored as percentage (0–100)** — not absolute px, survives device/rotation changes
@@ -196,8 +201,11 @@ Every transaction write: SQLite → sync_queue → update in-memory state. No ne
 - **Onboarding:** one-time overlay, gated on persisted `hasCompletedOnboarding` + a transient `_hasHydrated` flag (set via persist `onRehydrateStorage`) so it never flashes for returning users; mounted in `HomeScreen`
 - **Recent amounts:** numpad shows up to 3 recent distinct amounts (per bubble, or for income) via `db.getRecentAmounts()`; re-queried each time the sheet opens, hidden in edit mode
 - **Insights:** History shows a "Where it went" breakdown (`CategoryBreakdown`) as the list header — expense-only, sorted, bars scaled to the top category and tinted by bubble color. Aggregation is the pure `computeCategoryBreakdown` in `lib/insights.ts`.
+- **Budgets:** optional `budget` (monthly cap) per `Category`. The bubble ring always reflects *this calendar month's* spend ÷ cap — independent of the active period tab — so the category store keeps a separate `monthSpent` map (`loadMonthSpent`, re-read whenever Home's transactions change). Ring color: accent under, amber (`#E8A23D`) ≥80%, danger over; over-budget also reddens the bubble glow. Status is the pure `computeBudgetStatus` in `lib/budget.ts`. Set from the quick-actions menu (long-press a bubble → *Set budget* → `BudgetSheet`). **Visual-only** warnings, no notifications.
+- **Spending pace (`SpendingPace`):** shown only on the `month` tab — projects month-end spend (`projectMonthlySpend`) and compares to the summed caps (`totalBudget`). Hidden until the month has spend.
+- **Month-over-month:** the Insight month level shows expense delta vs the previous month (`computeMonthDelta`, `db.getMonthExpenseTotal` bucketed in local time); hidden when there's no prior-month baseline.
 - **Backup:** Settings → Data exports all categories + transactions to a JSON file (share sheet) and imports one back. Import **replaces** all local data via an atomic `db.replaceAllData` (wipe + bulk-insert in one transaction, clears the sync queue), then reloads the stores. Pure (de)serialization/validation in `lib/backup.ts`; device IO in `lib/backupIO.ts`.
-- **Pure logic is extracted + unit-tested:** `currency`, `period`, `bubbleSize`, `insights`, `backup` import only types, so Jest runs them with no native shims. Keep new pure logic in `lib/*` (no RN/expo imports) with a sibling `*.test.ts`.
+- **Pure logic is extracted + unit-tested:** `currency`, `period`, `bubbleSize`, `insights`, `budget`, `forecast`, `backup` import only types, so Jest runs them with no native shims. Keep new pure logic in `lib/*` (no RN/expo imports) with a sibling `*.test.ts`.
 
 ---
 
@@ -227,10 +235,12 @@ eas build --platform android --profile preview   # APK build
 ## SQLite Schema
 
 ```sql
-categories  (id, name, emoji, color_key, position_x, position_y, created_at)
+categories  (id, name, emoji, color_key, position_x, position_y, created_at, budget)
 transactions (id, category_id, amount, transacted_at, note, synced)
 sync_queue  (id, operation, entity, payload, created_at)
 ```
+
+`budget` (monthly cap, nullable) is added by an idempotent PRAGMA-probed `ALTER` on existing installs, same pattern as `transactions.type`.
 
 All SQLite via `expo-sqlite` synchronous API: `execSync`, `runSync`, `getAllSync`.
 

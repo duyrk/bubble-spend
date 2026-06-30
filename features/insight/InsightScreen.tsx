@@ -44,6 +44,7 @@ import Animated, {
 import { useBubbleColors, useColors, useResolvedTheme } from '@/hooks/useTheme';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useTranslation } from '@/hooks/useTranslation';
+import { computeMonthDelta } from '@/lib/forecast';
 import { GlassSurface } from '@/components/ui/GlassSurface';
 import { BLUR, RADII, SPRING } from '@/constants/theme';
 import { MONTHS, MONTHS_SHORT, WEEKDAYS_SHORT } from '@/lib/i18n';
@@ -500,6 +501,7 @@ interface MonthLevelProps {
 }
 
 function MonthLevel({ year, mi, onBack, onSelectWeek }: MonthLevelProps) {
+  const colors = useColors();
   const { t, language } = useTranslation();
   const detail = useMonthDetail(year, mi);
 
@@ -513,10 +515,38 @@ function MonthLevel({ year, mi, onBack, onSelectWeek }: MonthLevelProps) {
     : { expense: 0, income: 0 };
   const net = totals.income - totals.expense;
 
+  // Month-over-month change in expense vs the previous month. Only shown once
+  // there's a baseline (prevExpense > 0 → ratio is non-null). For spending, more
+  // is the deficit color and less is the income color.
+  const delta = detail ? computeMonthDelta(totals.expense, detail.prevExpense) : null;
+  const prevLabel = MONTHS_SHORT[language][(mi === 1 ? 12 : mi - 1) - 1];
+  const momColor =
+    delta?.direction === 'up'
+      ? DEFICIT_COLOR
+      : delta?.direction === 'down'
+        ? INCOME_COLOR
+        : colors.text.tertiary;
+
   return (
     <View style={styles.level}>
       <LevelHeader title={title} onBack={onBack} />
       <StatRow expense={totals.expense} income={totals.income} net={net} />
+
+      {delta && delta.ratio !== null ? (
+        <View style={styles.momRow}>
+          <Feather
+            name={delta.direction === 'up' ? 'arrow-up-right' : 'arrow-down-right'}
+            size={13}
+            color={momColor}
+          />
+          <Text style={[styles.momPct, { color: momColor }]}>
+            {Math.abs(Math.round(delta.ratio * 100))}%
+          </Text>
+          <Text style={[styles.momVs, { color: colors.text.tertiary }]}>
+            {t('insight.vsPrev')} {prevLabel}
+          </Text>
+        </View>
+      ) : null}
 
       <ScrollView contentContainerStyle={styles.scrollBody} showsVerticalScrollIndicator={false}>
         {detail === null ? (
@@ -1090,6 +1120,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 8,
     paddingBottom: 48,
+  },
+  // Month-over-month delta pill under the stat row
+  momRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    marginTop: -4,
+    marginBottom: 4,
+  },
+  momPct: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  momVs: {
+    fontSize: 12,
+    marginLeft: 2,
   },
   // Year grid
   grid: {

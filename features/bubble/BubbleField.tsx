@@ -8,6 +8,8 @@ import { useGyroscopeTilt } from '@/hooks/useGyroscopeTilt';
 import { useUIStore } from '@/stores/useUIStore';
 import { BubbleItem } from './BubbleItem';
 import { AddCategorySheet } from './AddCategorySheet';
+import { QuickActionsMenu } from './QuickActionsMenu';
+import { BudgetSheet } from './BudgetSheet';
 import { DeleteCategorySheet } from './DeleteCategorySheet';
 
 interface BubbleFieldProps {
@@ -39,6 +41,8 @@ export function BubbleField({ swipeGesture }: BubbleFieldProps) {
         ))}
       </Animated.View>
       {!dragMode && <AddCategorySheet />}
+      <QuickActionsMenu />
+      <BudgetSheet />
       <DeleteCategorySheet />
     </View>
   );

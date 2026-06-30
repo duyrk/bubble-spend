@@ -35,15 +35,24 @@ export function useMonthlyTotals(year: number): MonthlyTotal[] | null {
   return data;
 }
 
-export type MonthDetail = { weekly: WeeklyTotal[]; categories: CategoryTotal[] };
+export type MonthDetail = {
+  weekly: WeeklyTotal[];
+  categories: CategoryTotal[];
+  prevExpense: number; // previous month's total expense, for the MoM comparison
+};
 
-// Month level — 4 weekly totals + the month's category breakdown.
+// Month level — 4 weekly totals + the month's category breakdown + the previous
+// month's expense total (for the month-over-month delta). January's previous
+// month rolls back to the prior December.
 export function useMonthDetail(year: number, month: number): MonthDetail | null {
   const [data, setData] = useState<MonthDetail | null>(null);
   useEffect(() => {
+    const prevYear = month === 1 ? year - 1 : year;
+    const prevMonth = month === 1 ? 12 : month - 1;
     setData({
       weekly: db.getWeeklyTotals(year, month),
       categories: db.getCategoryTotalsByMonth(year, month),
+      prevExpense: db.getMonthExpenseTotal(prevYear, prevMonth),
     });
   }, [year, month]);
   return data;

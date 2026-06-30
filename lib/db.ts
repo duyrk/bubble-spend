@@ -36,9 +36,18 @@ export function initDb(): void {
       color_key TEXT NOT NULL,
       position_x REAL DEFAULT 50,
       position_y REAL DEFAULT 50,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL,
+      budget REAL
     );
   `);
+
+  // Idempotent column migration for installs that pre-date per-category budgets.
+  // PRAGMA probe first, same as the transactions.type migration below — a failed
+  // ALTER logs a noisy native exception even when caught.
+  const catColumns = db.getAllSync<{ name: string }>('PRAGMA table_info(categories)');
+  if (!catColumns.some((c) => c.name === 'budget')) {
+    db.execSync('ALTER TABLE categories ADD COLUMN budget REAL;');
+  }
 
   db.execSync(`
     CREATE TABLE IF NOT EXISTS transactions (
@@ -84,6 +93,7 @@ export function getAllCategories(): Category[] {
     position_x: number;
     position_y: number;
     created_at: number;
+    budget: number | null;
   }>('SELECT * FROM categories ORDER BY created_at ASC');
 
   return rows.map((r) => ({
@@ -94,20 +104,28 @@ export function getAllCategories(): Category[] {
     positionX: r.position_x,
     positionY: r.position_y,
     createdAt: r.created_at,
+    // NULL (no cap) → undefined so the rest of the app treats it as "no budget".
+    budget: r.budget == null ? undefined : r.budget,
   }));
 }
 
 export function insertCategory(cat: Category): void {
   const db = getDb();
   db.runSync(
-    'INSERT OR REPLACE INTO categories (id, name, emoji, color_key, position_x, position_y, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [cat.id, cat.name, cat.emoji, cat.colorKey, cat.positionX, cat.positionY, cat.createdAt],
+    'INSERT OR REPLACE INTO categories (id, name, emoji, color_key, position_x, position_y, created_at, budget) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [cat.id, cat.name, cat.emoji, cat.colorKey, cat.positionX, cat.positionY, cat.createdAt, cat.budget ?? null],
   );
 }
 
 export function updateCategoryPosition(id: string, x: number, y: number): void {
   const db = getDb();
   db.runSync('UPDATE categories SET position_x = ?, position_y = ? WHERE id = ?', [x, y, id]);
+}
+
+// Set (or clear, when budget is undefined) a category's monthly cap.
+export function updateCategoryBudget(id: string, budget: number | undefined): void {
+  const db = getDb();
+  db.runSync('UPDATE categories SET budget = ? WHERE id = ?', [budget ?? null, id]);
 }
 
 export function deleteCategory(id: string): void {
@@ -141,6 +159,26 @@ export function getTransactionsByPeriod(startMs: number, endMs: number): Transac
     note: r.note ?? undefined,
     synced: r.synced === 1,
   }));
+}
+
+// Per-category expense totals within a time range, as a categoryId → amount map.
+// Powers the budget ring: callers pass the current calendar month's range so the
+// ring reflects month-to-date spend regardless of the active period tab. Income
+// rows are excluded (they have no bubble and never count against a budget).
+export function getCategorySpend(startMs: number, endMs: number): Record<string, number> {
+  const db = getDb();
+  const rows = db.getAllSync<{ category_id: string; total: number }>(
+    `SELECT category_id, SUM(amount) AS total
+       FROM transactions
+      WHERE type = 'expense'
+        AND category_id != '__income__'
+        AND transacted_at >= ? AND transacted_at < ?
+      GROUP BY category_id`,
+    [startMs, endMs],
+  );
+  const out: Record<string, number> = {};
+  for (const r of rows) out[r.category_id] = r.total;
+  return out;
 }
 
 // Full transaction history, newest first — used by the backup export.
@@ -348,6 +386,21 @@ export function getTransactionsByDate(
     emoji: r.emoji,
     colorKey: r.color_key as BubbleColorKey,
   }));
+}
+
+// Single month's total expense (excluding income), bucketed in local time to
+// match the rest of the insight queries. Powers the month-over-month comparison.
+export function getMonthExpenseTotal(year: number, month: number): number {
+  const db = getDb();
+  const rows = db.getAllSync<{ total: number | null }>(
+    `SELECT SUM(amount) AS total
+       FROM transactions
+      WHERE category_id != '__income__'
+        AND strftime('%Y-%m', datetime(transacted_at/1000,'unixepoch','localtime'))
+            = printf('%04d-%02d', ?, ?)`,
+    [year, month],
+  );
+  return rows[0]?.total ?? 0;
 }
 
 export function getCategoryTotalsByMonth(year: number, month: number): CategoryTotal[] {

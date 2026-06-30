@@ -4,6 +4,7 @@ import * as Localization from 'expo-localization';
 import { SIZES } from '@/constants/theme';
 import { computeBubbleSize } from '@/lib/bubbleSize';
 import * as db from '@/lib/db';
+import { getPeriodRange } from '@/lib/period';
 import { getDefaultCategories } from '@/lib/i18n/defaultCategories';
 import { INCOME_CATEGORY_ID } from '@/types';
 import type { BubbleColorKey, Category, Transaction } from '@/types';
@@ -12,13 +13,19 @@ import { create } from 'zustand';
 type CategoryState = {
   categories: Category[];
   sizes: Record<string, { size: number; total: number }>; // categoryId → computed
+  // categoryId → current calendar-month expense total. Separate from `sizes`
+  // (which tracks the active period) because the budget ring is always monthly.
+  monthSpent: Record<string, number>;
   loaded: boolean;
 
   load: () => void;
   addCategory: (cat: Omit<Category, 'id' | 'createdAt'>) => Category;
   updatePosition: (id: string, x: number, y: number) => void;
+  setBudget: (id: string, budget: number | undefined) => void;
   deleteCategory: (id: string) => void;
   recalcSizes: (transactions: Transaction[]) => void;
+  // Re-read this calendar month's per-category spend from SQLite (drives rings).
+  loadMonthSpent: () => void;
 };
 
 function generateId(): string {
@@ -28,6 +35,7 @@ function generateId(): string {
 export const useCategoryStore = create<CategoryState>((set, get) => ({
   categories: [],
   sizes: {},
+  monthSpent: {},
   loaded: false,
 
   load: () => {
@@ -58,6 +66,9 @@ export const useCategoryStore = create<CategoryState>((set, get) => ({
     // Seed sizes so bubbles render at BUBBLE_BASE immediately. Without this,
     // sizes is {} on first frame and BubbleItem reads 0 until transactions load.
     get().recalcSizes([]);
+    // Load this month's per-category spend so budget rings are correct on first
+    // paint (independent of which period tab Home opens on).
+    get().loadMonthSpent();
   },
 
   addCategory: (partial) => {
@@ -82,6 +93,17 @@ export const useCategoryStore = create<CategoryState>((set, get) => ({
     set({
       categories: get().categories.map((c) =>
         c.id === id ? { ...c, positionX: x, positionY: y } : c,
+      ),
+    });
+  },
+
+  setBudget: (id, budget) => {
+    // Normalize: a non-positive cap means "no budget" — store it as cleared.
+    const normalized = budget && budget > 0 ? budget : undefined;
+    db.updateCategoryBudget(id, normalized);
+    set({
+      categories: get().categories.map((c) =>
+        c.id === id ? { ...c, budget: normalized } : c,
       ),
     });
   },
@@ -121,5 +143,10 @@ export const useCategoryStore = create<CategoryState>((set, get) => ({
     }
 
     set({ sizes });
+  },
+
+  loadMonthSpent: () => {
+    const { start, end } = getPeriodRange('month');
+    set({ monthSpent: db.getCategorySpend(start, end) });
   },
 }));

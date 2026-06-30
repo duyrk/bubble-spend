@@ -20,8 +20,10 @@ import { NumpadModal } from '@/features/numpad/NumpadModal';
 import { FireworksOverlay } from '@/features/effects/Fireworks';
 import { useFireworks } from '@/features/effects/useFireworks';
 import { OnboardingOverlay } from '@/features/onboarding/OnboardingOverlay';
+import { totalBudget } from '@/lib/budget';
 import { PeriodBar } from './PeriodBar';
 import { TotalDisplay } from './TotalDisplay';
+import { SpendingPace } from './SpendingPace';
 import type { TransactionType } from '@/types';
 
 const INCOME_GLOW = 'rgba(61,184,130,0.6)';
@@ -42,6 +44,7 @@ export function HomeScreen() {
   const transactions = useTransactionStore((s) => s.transactions);
   const deleteTransaction = useTransactionStore((s) => s.deleteTransaction);
   const recalcSizes = useCategoryStore((s) => s.recalcSizes);
+  const loadMonthSpent = useCategoryStore((s) => s.loadMonthSpent);
   const categories = useCategoryStore((s) => s.categories);
   const loaded = useCategoryStore((s) => s.loaded);
 
@@ -56,7 +59,10 @@ export function HomeScreen() {
 
   useEffect(() => {
     recalcSizes(transactions);
-  }, [transactions, recalcSizes]);
+    // Re-read this month's per-category spend whenever transactions change
+    // (a new log, an edit, an undo) so budget rings stay current.
+    loadMonthSpent();
+  }, [transactions, recalcSizes, loadMonthSpent]);
 
   const handleTransactionConfirmed = useCallback(
     (categoryId: string, x: number, y: number, type: TransactionType, txId: string) => {
@@ -97,6 +103,12 @@ export function HomeScreen() {
     return { expenseTotal: exp, incomeTotal: inc, netBalance: inc - exp };
   }, [transactions]);
   const isEmpty = transactions.length === 0;
+
+  // Household monthly budget = sum of every category's cap. Drives the pace line.
+  const monthlyBudgetTotal = useMemo(
+    () => totalBudget(categories.map((c) => c.budget)),
+    [categories],
+  );
 
   // Horizontal swipe on the home body steps between periods. Left = next
   // (Today→Yesterday→Week→Month), right = previous, clamped at the ends.
@@ -150,6 +162,10 @@ export function HomeScreen() {
             net={netBalance}
             onIncomePress={openIncomeModal}
           />
+
+          {activePeriod === 'month' ? (
+            <SpendingPace monthToDate={expenseTotal} totalBudget={monthlyBudgetTotal} />
+          ) : null}
 
           <BubbleField swipeGesture={swipeGesture} />
         </View>

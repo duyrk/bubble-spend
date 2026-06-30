@@ -20,9 +20,10 @@
 - [ ] Swipe gesture between period tabs on Home (in addition to tap)
 
 ## v1.2 — Budget & goals
-- [ ] Per-category budget setting
-- [ ] Budget progress ring around bubble (visual fill as % of budget)
-- [ ] Alert when approaching budget limit
+- [x] Per-category budget setting (long-press a bubble → quick-actions menu → "Set budget")
+- [x] Budget progress ring around bubble (monthly spend as % of cap; amber ≥80%, red over)
+- [x] Alert when approaching / over budget limit (visual: ring color + red bubble halo)
+- [x] Spending pace — projected month-end total on the "This month" tab, on-track vs budget
 - [ ] Monthly savings goal — larger fireworks celebration when net is positive at month end
 - [ ] Recurring expense templates (e.g. rent auto-logs on the 1st)
 
@@ -30,7 +31,7 @@
 - [x] Category spending breakdown per period ("Where it went" — bars on History)
 - [ ] Spending trend chart (line chart, per category over time)
 - [ ] "Peak spending" insight — which day/hour you spend most
-- [ ] Month-over-month comparison
+- [x] Month-over-month comparison (expense delta vs previous month on the Insight month level)
 - [ ] Largest single transaction highlight
 - [ ] iOS/Android widget — today's total at a glance
 
