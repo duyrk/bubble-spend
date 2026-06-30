@@ -10,6 +10,7 @@ import type { CategoryWithSize } from '@/types';
 export function useCategoriesWithSize(): CategoryWithSize[] {
   const categories = useCategoryStore(useShallow((s) => s.categories));
   const sizes = useCategoryStore(useShallow((s) => s.sizes));
+  const monthSpent = useCategoryStore(useShallow((s) => s.monthSpent));
 
   return useMemo(
     () =>
@@ -17,7 +18,8 @@ export function useCategoriesWithSize(): CategoryWithSize[] {
         ...c,
         size: sizes[c.id]?.size ?? SIZES.BUBBLE_BASE,
         total: sizes[c.id]?.total ?? 0,
+        monthSpent: monthSpent[c.id] ?? 0,
       })),
-    [categories, sizes],
+    [categories, sizes, monthSpent],
   );
 }

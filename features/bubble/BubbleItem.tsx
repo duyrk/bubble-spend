@@ -23,6 +23,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
+  useAnimatedRef,
+  measure,
   withSpring,
   withRepeat,
   withTiming,
@@ -31,10 +33,13 @@ import Animated, {
   Easing,
   cancelAnimation,
   runOnJS,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
+import Svg, { Circle } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import type { CategoryWithSize } from '@/types';
+import { computeBudgetStatus } from '@/lib/budget';
 import { GESTURE } from '@/constants/config';
 import { useUIStore } from '@/stores/useUIStore';
 import { useCategoryStore } from '@/stores/useCategoryStore';
@@ -67,6 +72,20 @@ const HIT_SLOP = 10;
 // Extra diameter of the glow halo beyond the bubble (px), split evenly each side.
 const GLOW_SPREAD = 28;
 
+// Budget ring geometry. The ring sits just outside the bubble edge: the SVG
+// viewBox scales to fill an Animated container sized to the live bubble diameter
+// plus RING_OUTSET on each side, so it tracks the size spring + press/wobble.
+const RING_OUTSET = 7;
+const RING_VIEWBOX = 100;
+const RING_RADIUS = 46;
+const RING_STROKE = 5;
+const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
+
+// Amber "approaching the cap" ring tint (≥80% spent). Over-budget reuses the
+// theme danger color; under-budget uses the app accent. Local semantic constant,
+// matching how the rest of the app keeps INCOME/DEFICIT colors at file scope.
+const BUDGET_NEAR_COLOR = '#E8A23D';
+
 function BubbleItemImpl({ category, dragMode, index, swipeGesture }: BubbleItemProps) {
   const { animatedSize } = useBubblePhysics(category.size);
   const bubbleColors = useBubbleColors();
@@ -77,9 +96,12 @@ function BubbleItemImpl({ category, dragMode, index, swipeGesture }: BubbleItemP
   const { compact } = useFormatCurrency();
 
   const openModal = useUIStore((s) => s.openModal);
-  const enterDragMode = useUIStore((s) => s.enterDragMode);
-  const requestDeleteCategory = useUIStore((s) => s.requestDeleteCategory);
+  const requestBubbleActions = useUIStore((s) => s.requestBubbleActions);
   const updatePosition = useCategoryStore((s) => s.updatePosition);
+
+  // Animated ref so the long-press worklet can measure() the bubble's window
+  // frame and anchor the quick-actions menu next to it.
+  const aRef = useAnimatedRef<Animated.View>();
 
   const floatY = useSharedValue(0);
   const wobbleRotate = useSharedValue(0);
@@ -123,18 +145,20 @@ function BubbleItemImpl({ category, dragMode, index, swipeGesture }: BubbleItemP
 
   useEffect(() => {
     if (dragMode) {
+      // Calmer jiggle — ~half the old frequency and a touch less amplitude so it
+      // reads as a gentle wobble, not a fast shake.
       wobbleRotate.value = withRepeat(
         withSequence(
-          withTiming(-4, { duration: 190, easing: Easing.inOut(Easing.sin) }),
-          withTiming(4, { duration: 190, easing: Easing.inOut(Easing.sin) }),
+          withTiming(-2.5, { duration: 360, easing: Easing.inOut(Easing.sin) }),
+          withTiming(2.5, { duration: 360, easing: Easing.inOut(Easing.sin) }),
         ),
         -1,
         true,
       );
       wobbleScale.value = withRepeat(
         withSequence(
-          withTiming(1.03, { duration: 220, easing: Easing.inOut(Easing.sin) }),
-          withTiming(0.97, { duration: 220, easing: Easing.inOut(Easing.sin) }),
+          withTiming(1.015, { duration: 400, easing: Easing.inOut(Easing.sin) }),
+          withTiming(0.985, { duration: 400, easing: Easing.inOut(Easing.sin) }),
         ),
         -1,
         true,
@@ -177,25 +201,21 @@ function BubbleItemImpl({ category, dragMode, index, swipeGesture }: BubbleItemP
       runOnJS(openModal)(category.id);
     });
 
+  // Long-press (outside drag mode) opens the iOS-style quick-actions menu. We
+  // measure() the bubble's window frame in the worklet so the menu anchors next
+  // to it; entering drag mode for repositioning is the menu's "Rearrange" action.
   const longPress = Gesture.LongPress()
     .minDuration(GESTURE.DRAG_ACTIVATION_DELAY)
     .enabled(!dragMode)
     .hitSlop({ top: HIT_SLOP, bottom: HIT_SLOP, left: HIT_SLOP, right: HIT_SLOP })
     .onStart(() => {
       runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Medium);
-      runOnJS(enterDragMode)();
-    });
-
-  // Long-press *while already in drag mode* requests delete. Holding still won't
-  // trip the pan (it needs movement), and any drag cancels this LongPress, so the
-  // two coexist: hold to delete, drag to reposition.
-  const longPressDelete = Gesture.LongPress()
-    .minDuration(GESTURE.DRAG_ACTIVATION_DELAY)
-    .enabled(dragMode)
-    .hitSlop({ top: HIT_SLOP, bottom: HIT_SLOP, left: HIT_SLOP, right: HIT_SLOP })
-    .onStart(() => {
-      runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Heavy);
-      runOnJS(requestDeleteCategory)(category.id);
+      const m = measure(aRef);
+      if (m) {
+        runOnJS(requestBubbleActions)(category.id, m.pageX + m.width / 2, m.pageY, m.pageY + m.height);
+      } else {
+        runOnJS(requestBubbleActions)(category.id, 0, 0, 0);
+      }
     });
 
   const pan = Gesture.Pan()
@@ -225,14 +245,10 @@ function BubbleItemImpl({ category, dragMode, index, swipeGesture }: BubbleItemP
   if (swipeGesture) {
     tap.simultaneousWithExternalGesture(swipeGesture);
     longPress.simultaneousWithExternalGesture(swipeGesture);
-    longPressDelete.simultaneousWithExternalGesture(swipeGesture);
     pan.simultaneousWithExternalGesture(swipeGesture);
   }
 
-  const gesture = Gesture.Simultaneous(
-    Gesture.Exclusive(longPress, longPressDelete, tap),
-    pan,
-  );
+  const gesture = Gesture.Simultaneous(Gesture.Exclusive(longPress, tap), pan);
 
   // Bubble view — positioned by left/top %, centered via negative margins, and
   // carrying the drop shadow + every transform. This is the gesture target, so
@@ -293,6 +309,18 @@ function BubbleItemImpl({ category, dragMode, index, swipeGesture }: BubbleItemP
 
   const amountStr = compact(category.total);
 
+  // Budget ring reflects this calendar month's spend against the monthly cap,
+  // regardless of the active period tab. No cap → no ring.
+  const budget = computeBudgetStatus(category.monthSpent, category.budget);
+  const ringColor =
+    budget.level === 'over'
+      ? colors.danger
+      : budget.level === 'near'
+        ? BUDGET_NEAR_COLOR
+        : colors.accent;
+  const ringTrack =
+    resolvedTheme === 'light' ? 'rgba(13,13,20,0.10)' : 'rgba(255,255,255,0.12)';
+
   const nameColor =
     resolvedTheme === 'light' ? 'rgba(13,13,20,0.78)' : 'rgba(255,255,255,0.78)';
   const innerTopSheen =
@@ -311,11 +339,13 @@ function BubbleItemImpl({ category, dragMode, index, swipeGesture }: BubbleItemP
   return (
     <GestureDetector gesture={gesture}>
       <Animated.View
+        ref={aRef}
         style={[
           styles.bubble,
           { left: `${category.positionX}%`, top: `${category.positionY}%` },
           wrapperStyle,
-          { shadowColor: palette.glow },
+          // Over budget swaps the soft glow to a red halo — a subtle "rim" cue.
+          { shadowColor: budget.level === 'over' ? colors.danger : palette.glow },
         ]}
       >
         {/* Layer 0 — pulsing glow halo, centered behind the bubble */}
@@ -323,6 +353,16 @@ function BubbleItemImpl({ category, dragMode, index, swipeGesture }: BubbleItemP
           pointerEvents="none"
           style={[styles.glowRing, glowRingStyle, { backgroundColor: palette.glow }]}
         />
+
+        {/* Layer 0.5 — budget progress ring (only when a cap is set) */}
+        {budget.hasBudget ? (
+          <BudgetRing
+            animatedSize={animatedSize}
+            ratio={budget.ratio}
+            color={ringColor}
+            trackColor={ringTrack}
+          />
+        ) : null}
 
         {/* Layer 1 — rim gradient ring (directional sheen). The inner core
             sits inset by RIM_WIDTH, so this only shows on the perimeter. */}
@@ -405,12 +445,63 @@ function BubbleItemImpl({ category, dragMode, index, swipeGesture }: BubbleItemP
 
 export const BubbleItem = memo(BubbleItemImpl);
 
+// Circular budget progress ring. The Animated container is sized to the live
+// bubble diameter (+ outset) so the ring tracks the size spring; the SVG inside
+// scales to fill it via its viewBox, so the arc geometry needs no worklet props.
+// `ratio` (0..1) is a plain render value — it only changes when spend/cap change.
+interface BudgetRingProps {
+  animatedSize: SharedValue<number>;
+  ratio: number;
+  color: string;
+  trackColor: string;
+}
+
+function BudgetRing({ animatedSize, ratio, color, trackColor }: BudgetRingProps) {
+  const containerStyle = useAnimatedStyle(() => {
+    const s = animatedSize.value + RING_OUTSET * 2;
+    return { width: s, height: s, top: -RING_OUTSET, left: -RING_OUTSET };
+  });
+  const clamped = Math.max(0, Math.min(1, ratio));
+  const dashOffset = RING_CIRCUMFERENCE * (1 - clamped);
+  const center = RING_VIEWBOX / 2;
+
+  return (
+    <Animated.View pointerEvents="none" style={[styles.budgetRing, containerStyle]}>
+      <Svg width="100%" height="100%" viewBox={`0 0 ${RING_VIEWBOX} ${RING_VIEWBOX}`}>
+        <Circle
+          cx={center}
+          cy={center}
+          r={RING_RADIUS}
+          stroke={trackColor}
+          strokeWidth={RING_STROKE}
+          fill="none"
+        />
+        <Circle
+          cx={center}
+          cy={center}
+          r={RING_RADIUS}
+          stroke={color}
+          strokeWidth={RING_STROKE}
+          fill="none"
+          strokeLinecap="round"
+          strokeDasharray={RING_CIRCUMFERENCE}
+          strokeDashoffset={dashOffset}
+          transform={`rotate(-90 ${center} ${center})`}
+        />
+      </Svg>
+    </Animated.View>
+  );
+}
+
 const styles = StyleSheet.create({
   glowRing: {
     position: 'absolute',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 1,
     shadowRadius: 24,
+  },
+  budgetRing: {
+    position: 'absolute',
   },
   bubble: {
     position: 'absolute',

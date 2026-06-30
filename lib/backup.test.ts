@@ -28,6 +28,16 @@ describe('serializeBackup / parseBackup', () => {
     expect(parsed.transactions[0].note).toBeUndefined();
     expect(parsed.transactions[1].note).toBe('lunch');
   });
+
+  it('round-trips a category budget and leaves an unset one undefined', () => {
+    const withBudget: Category[] = [
+      { ...categories[0], budget: 2_000_000 },
+      categories[1], // no budget set
+    ];
+    const parsed = parseBackup(serializeBackup(withBudget, []));
+    expect(parsed.categories[0].budget).toBe(2_000_000);
+    expect(parsed.categories[1].budget).toBeUndefined();
+  });
 });
 
 describe('parseBackup validation', () => {

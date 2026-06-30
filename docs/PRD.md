@@ -22,15 +22,21 @@ Each bubble shows:
 - Category name (small, below emoji)
 - Spend amount for the active period — compact form (e.g. `$1.2k`, `380 ₫`) — or "tap" hint if zero
 
+**Budget ring** — a category with a monthly budget shows a progress ring around its bubble: this calendar month's spend ÷ the cap (always monthly, regardless of the active period tab). The accent color under budget, amber at ≥ 80%, red once over — and an over-budget bubble swaps its soft glow for a red halo. Set via the quick-actions menu (below).
+
 **Gestures on a bubble:**
 - **Tap** (< 500 ms): opens the numpad modal for that category (expense mode by default)
-- **Long press** (≥ 500 ms): enters drag mode with haptic feedback
+- **Long press** (≥ 500 ms): opens the **quick-actions menu** (haptic feedback)
 
-**Drag mode:**
-- All bubbles wobble
+**Quick-actions menu** — an iOS-style long-press menu: a blurred backdrop dims the field and a menu pops anchored next to the pressed bubble (its window frame is captured via `measure()`). Rows: *Log expense* (opens the numpad), *Set budget* (→ a monthly-cap editor sheet, showing the current cap if any), *Rearrange* (→ drag mode), and *Delete category* (destructive, red → the delete confirmation). Tap the backdrop to dismiss.
+
+**Drag mode** (entered via *Rearrange*):
+- All bubbles do a gentle, slow wobble
 - Bubbles become pannable — drag to reposition; position is persisted to SQLite
 - A "Done ✓" pill appears top-right; pressing it exits drag mode
 - Tab-bar swipe navigation is disabled while drag mode is active
+
+**Spending pace** — on the "This month" tab only, a line under the summary projects the month-end total from the daily rate so far (`spent ÷ day-of-month × days-in-month`). When category budgets exist it also flags *on track* or *over* against the summed monthly budget. Hidden until the month has any spend.
 
 **Numpad modal** — slides up from the bottom:
 - Type toggle pill at the top: `− Expense` | `+ Income`. Switching does not reset the typed amount.
@@ -50,7 +56,7 @@ Each bubble shows:
 
 **Add category button** — floating "+" above the tab bar in the bottom-right corner (hidden at 8-bubble limit). Opens a bottom sheet with 12 preset emoji/name combinations, plus a **Custom** option to type a name and pick from ~40 icons. Color key is auto-assigned by cycling through the 8 bubble colors.
 
-**Onboarding (first launch)** — a one-time coaching overlay introduces the non-obvious gestures: tap to log, hold to rearrange, hold-again-while-rearranging to remove, and the "Earned" income entry point. Dismissed with "Got it". Gated on the persisted `hasCompletedOnboarding` flag and shown only after settings hydrate, so returning users never see a flash.
+**Onboarding (first launch)** — a one-time coaching overlay introduces the non-obvious gestures: tap to log, long-press for the quick-actions menu, Rearrange to drag bubbles, and the "Earned" income entry point. Dismissed with "Got it". Gated on the persisted `hasCompletedOnboarding` flag and shown only after settings hydrate, so returning users never see a flash.
 
 ---
 
@@ -77,7 +83,7 @@ Entry point: chart icon button in the History screen header.
 
 **Year overview** — 12 month bubbles in a 4×3 grid. Bubble size scales linearly with spending (52px base → 82px max, same formula as home). Current month has a ring indicator. Future months are dimmed and non-tappable. Year navigator (← →). Summary row: total expense / income / net for the year.
 
-**Month detail** — slides in from the right. Shows expense / income / net stats, category breakdown bars (actual DB totals), and 4 tappable week columns. Tap a week column → week detail.
+**Month detail** — slides in from the right. Shows expense / income / net stats, a **month-over-month** delta (this month's expense vs the previous month — up in red, down in green, hidden when there's no prior-month baseline), category breakdown bars (actual DB totals), and 4 tappable week columns. Tap a week column → week detail.
 
 **Week detail** — shows 7-day bar chart (Mon–Sun), stats (total / peak day / daily avg), and category breakdown for that week. Tap a day column → day sheet.
 
@@ -150,12 +156,16 @@ Entry point: chart icon button in the History screen header.
 - Per-category spending breakdown ("Where it went") on the History screen
 - Data export / import — JSON backup of all categories + transactions via the share sheet; restore replaces all local data
 - Insight screen — year → month → week → day drill-down (chart icon in the History header)
-- Jest unit tests for the pure logic layer (currency, period, bubble size, insights, backup)
+- Per-category monthly budgets with an on-bubble progress ring; set via the drag-mode bubble action sheet
+- Spending pace projection on the "This month" tab (on-track / over-budget against summed caps)
+- Month-over-month expense comparison on the Insight month level
+- Jest unit tests for the pure logic layer (currency, period, bubble size, insights, backup, budget, forecast)
 
 ## Not Yet Implemented
 
 - Backend API integration (sync queue writes but never flushes)
 - FolderBubble grouping (component scaffolded, not wired)
 - Editing a transaction's income/expense type, or its exact time of day (the edit sheet covers amount, date, category, and note)
-- Per-category budgets / spending caps
+- Recurring expense templates (e.g. rent auto-logs on the 1st)
+- Over-budget *push notifications* — the budget warning is visual-only (ring color + bubble halo); no notification is sent
 - A "smarter" daily reminder (skip if already logged today, surface today's running total) — doing this reliably needs background tasks or the backend; today's reminder is a fixed daily nudge

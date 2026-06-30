@@ -91,6 +91,8 @@ function parseCategory(v: unknown): Category {
     positionX: asNumber(o.positionX, 'category.positionX'),
     positionY: asNumber(o.positionY, 'category.positionY'),
     createdAt: asNumber(o.createdAt, 'category.createdAt'),
+    // budget is optional — backups predating the feature simply omit it.
+    budget: typeof o.budget === 'number' ? o.budget : undefined,
   };
 }
 

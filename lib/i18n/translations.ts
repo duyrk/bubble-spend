@@ -87,15 +87,29 @@ const en = {
   deleteCategoryTitle: 'Delete this category?',
   deleteCategoryBody: 'All of its transactions will be permanently deleted too.',
 
+  // Budgets & spending pace
+  budget: 'Budget',
+  logExpense: 'Log expense',
+  setBudget: 'Set budget',
+  rearrange: 'Rearrange',
+  deleteCategoryAction: 'Delete category',
+  monthlyBudget: 'Monthly budget',
+  budgetSubtitle: 'Monthly spending cap for this bubble',
+  removeBudget: 'Remove budget',
+  projected: 'Projected',
+  paceThisMonth: 'this month',
+  paceOnTrack: 'on track',
+  paceOver: 'over',
+
   // Onboarding
   onboardingTitle: 'Welcome to Bubble Spend',
   onboardingSubtitle: 'A few gestures to get you going',
   onboardingTapTitle: 'Tap to log',
   onboardingTapDesc: 'Tap any bubble to record a spend on it.',
-  onboardingHoldTitle: 'Hold to rearrange',
-  onboardingHoldDesc: 'Press and hold a bubble, then drag it anywhere.',
-  onboardingDeleteTitle: 'Hold again to remove',
-  onboardingDeleteDesc: 'While rearranging, hold a bubble to delete it.',
+  onboardingHoldTitle: 'Hold for actions',
+  onboardingHoldDesc: 'Press and hold a bubble for log, budget, rearrange, and delete.',
+  onboardingDeleteTitle: 'Rearrange anytime',
+  onboardingDeleteDesc: 'In that menu, tap Rearrange to drag bubbles around, then Done.',
   onboardingIncomeTitle: 'Log income',
   onboardingIncomeDesc: 'Tap "Earned" at the top to add money in.',
   onboardingCta: 'Got it',
@@ -148,6 +162,7 @@ const en = {
   'insight.weeklySpend': 'Weekly spend',
   'insight.noTransactions': 'No transactions',
   'insight.transactions': 'Transactions',
+  'insight.vsPrev': 'vs',
 } as const;
 
 export type TranslationKey = keyof typeof en;
@@ -213,14 +228,27 @@ const vi: Record<TranslationKey, string> = {
   deleteCategoryTitle: 'Xoá danh mục này?',
   deleteCategoryBody: 'Tất cả giao dịch của danh mục cũng sẽ bị xoá vĩnh viễn.',
 
+  budget: 'Ngân sách',
+  logExpense: 'Ghi chi tiêu',
+  setBudget: 'Đặt ngân sách',
+  rearrange: 'Sắp xếp lại',
+  deleteCategoryAction: 'Xoá danh mục',
+  monthlyBudget: 'Ngân sách hàng tháng',
+  budgetSubtitle: 'Hạn mức chi tiêu hàng tháng cho bubble này',
+  removeBudget: 'Xoá ngân sách',
+  projected: 'Dự kiến',
+  paceThisMonth: 'tháng này',
+  paceOnTrack: 'đúng tiến độ',
+  paceOver: 'vượt',
+
   onboardingTitle: 'Chào mừng đến Bubble Spend',
   onboardingSubtitle: 'Vài thao tác để bắt đầu',
   onboardingTapTitle: 'Chạm để ghi',
   onboardingTapDesc: 'Chạm vào một bubble để ghi một khoản chi.',
-  onboardingHoldTitle: 'Giữ để sắp xếp',
-  onboardingHoldDesc: 'Nhấn giữ một bubble rồi kéo tới vị trí bất kỳ.',
-  onboardingDeleteTitle: 'Giữ lần nữa để xoá',
-  onboardingDeleteDesc: 'Khi đang sắp xếp, giữ một bubble để xoá nó.',
+  onboardingHoldTitle: 'Giữ để mở menu',
+  onboardingHoldDesc: 'Nhấn giữ một bubble để ghi, đặt ngân sách, sắp xếp và xoá.',
+  onboardingDeleteTitle: 'Sắp xếp bất cứ lúc nào',
+  onboardingDeleteDesc: 'Trong menu, chạm Sắp xếp lại để kéo bubble, rồi chạm Xong.',
   onboardingIncomeTitle: 'Ghi thu nhập',
   onboardingIncomeDesc: 'Chạm "Thu nhập" ở trên cùng để thêm tiền vào.',
   onboardingCta: 'Đã hiểu',
@@ -267,6 +295,7 @@ const vi: Record<TranslationKey, string> = {
   'insight.weeklySpend': 'Chi tiêu theo tuần',
   'insight.noTransactions': 'Không có giao dịch',
   'insight.transactions': 'Giao dịch',
+  'insight.vsPrev': 'so với',
 };
 
 export const TRANSLATIONS: Record<Language, Record<TranslationKey, string>> = { en, vi };

@@ -1,6 +1,7 @@
-// First-launch coaching overlay. The core bubble interactions — hold-to-drag,
-// hold-again-to-delete, and the "Earned" income entry point — aren't discoverable
-// on their own, so we surface them once. Gated on the persisted
+// First-launch coaching overlay. The core bubble interactions — long-press for
+// the quick-actions menu (log / budget / rearrange / delete) and the "Earned"
+// income entry point — aren't discoverable on their own, so we surface them once.
+// Gated on the persisted
 // `hasCompletedOnboarding` flag, and only shown after settings have hydrated so
 // returning users never see a flash.
 
@@ -18,7 +19,7 @@ import type { TranslationKey } from '@/lib/i18n';
 const TIPS: { emoji: string; title: TranslationKey; desc: TranslationKey }[] = [
   { emoji: '👆', title: 'onboardingTapTitle', desc: 'onboardingTapDesc' },
   { emoji: '✋', title: 'onboardingHoldTitle', desc: 'onboardingHoldDesc' },
-  { emoji: '🗑️', title: 'onboardingDeleteTitle', desc: 'onboardingDeleteDesc' },
+  { emoji: '🔀', title: 'onboardingDeleteTitle', desc: 'onboardingDeleteDesc' },
   { emoji: '💰', title: 'onboardingIncomeTitle', desc: 'onboardingIncomeDesc' },
 ];
 
