@@ -101,6 +101,20 @@ const en = {
   paceOnTrack: 'on track',
   paceOver: 'over',
 
+  // Recurring expense templates
+  setRecurring: 'Set recurring',
+  recurringTitle: 'Recurring expense',
+  recurringSubtitle: 'Logs itself on a schedule',
+  freqDaily: 'Daily',
+  freqWeekly: 'Weekly',
+  freqMonthly: 'Monthly',
+  dayOfMonthLabel: 'Day of month',
+  removeRecurring: 'Remove recurring',
+  recurringExpenses: 'Recurring expenses',
+  none: 'None',
+  noRecurring: 'No recurring expenses yet',
+  noRecurringHint: 'Hold a bubble and choose "Set recurring"',
+
   // Onboarding
   onboardingTitle: 'Welcome to Bubble Spend',
   onboardingSubtitle: 'A few gestures to get you going',
@@ -240,6 +254,19 @@ const vi: Record<TranslationKey, string> = {
   paceThisMonth: 'tháng này',
   paceOnTrack: 'đúng tiến độ',
   paceOver: 'vượt',
+
+  setRecurring: 'Đặt định kỳ',
+  recurringTitle: 'Chi tiêu định kỳ',
+  recurringSubtitle: 'Tự động ghi theo lịch',
+  freqDaily: 'Hằng ngày',
+  freqWeekly: 'Hằng tuần',
+  freqMonthly: 'Hằng tháng',
+  dayOfMonthLabel: 'Ngày trong tháng',
+  removeRecurring: 'Xoá định kỳ',
+  recurringExpenses: 'Chi tiêu định kỳ',
+  none: 'Không có',
+  noRecurring: 'Chưa có chi tiêu định kỳ nào',
+  noRecurringHint: 'Giữ một bubble rồi chọn "Đặt định kỳ"',
 
   onboardingTitle: 'Chào mừng đến Bubble Spend',
   onboardingSubtitle: 'Vài thao tác để bắt đầu',

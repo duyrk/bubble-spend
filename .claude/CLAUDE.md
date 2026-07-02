@@ -29,7 +29,7 @@ Full PRD and architecture: @docs/PRD.md
 
 ```
 app/
-  _layout.tsx             Root layout — DB init, notification handler, theme
+  _layout.tsx             Root layout — DB init, notification handler, theme, recurring auto-fire
   (tabs)/
     _layout.tsx           Tab navigator (Home, History, Settings) + FloatingTabBar
     index.tsx             Home screen entry
@@ -46,8 +46,9 @@ features/
     BubbleField.tsx       Positions all bubbles + gyro tilt wrapper
     BubbleItem.tsx        Single bubble — gestures, float/wobble, budget ring
     AddCategorySheet.tsx  FAB "+" button + preset/custom category bottom sheet
-    QuickActionsMenu.tsx  iOS-style long-press menu (blurred backdrop, anchored) — Log / Set budget / Rearrange / Delete
+    QuickActionsMenu.tsx  iOS-style long-press menu (blurred backdrop, anchored) — Log / Set budget / Set recurring / Rearrange / Delete
     BudgetSheet.tsx       Monthly-budget editor sheet (numeric input + remove)
+    RecurringSheet.tsx    Recurring-template editor sheet (amount, daily/weekly/monthly, note + remove)
     DeleteCategorySheet.tsx  Confirm sheet — reached from QuickActionsMenu's "Delete"
     FolderBubble.tsx      (scaffolded, not wired)
     useBubblePhysics.ts   Spring animation for bubble size changes
@@ -77,10 +78,12 @@ features/
     SettingsGroup.tsx     Grouped section container
     SettingsRow.tsx       Label + value row with optional right element
     OptionPickerModal.tsx Full-screen picker for single-select options
+    RecurringListSheet.tsx Manage-recurring sheet — list all templates + per-row delete
 
 stores/
   useCategoryStore.ts
   useTransactionStore.ts
+  useRecurringStore.ts
   useUIStore.ts
   useSettingsStore.ts
 
@@ -99,6 +102,8 @@ lib/
   insights.ts             computeCategoryBreakdown — pure per-category aggregation (unit-tested)
   budget.ts               computeBudgetStatus / totalBudget — pure budget math (unit-tested)
   forecast.ts             projectMonthlySpend / computeMonthDelta — pure pace + MoM math (unit-tested)
+  recurring.ts            shouldFireToday / getDueTemplates — pure recurring due-check (unit-tested)
+  recurringIO.ts          fireDueRecurringTemplates — auto-log side effects (SQLite + sync queue)
   period.ts               getPeriodRange — pure period → [start, end) ms range (unit-tested)
   bubbleSize.ts           computeBubbleSize — pure bubble-size formula (unit-tested)
   notifications.ts        Schedule/cancel daily reminder
@@ -204,6 +209,7 @@ Every transaction write: SQLite → sync_queue → update in-memory state. No ne
 - **Budgets:** optional `budget` (monthly cap) per `Category`. The bubble ring always reflects *this calendar month's* spend ÷ cap — independent of the active period tab — so the category store keeps a separate `monthSpent` map (`loadMonthSpent`, re-read whenever Home's transactions change). Ring color: accent under, amber (`#E8A23D`) ≥80%, danger over; over-budget also reddens the bubble glow. Status is the pure `computeBudgetStatus` in `lib/budget.ts`. Set from the quick-actions menu (long-press a bubble → *Set budget* → `BudgetSheet`). **Visual-only** warnings, no notifications.
 - **Spending pace (`SpendingPace`):** shown only on the `month` tab — projects month-end spend (`projectMonthlySpend`) and compares to the summed caps (`totalBudget`). Hidden until the month has spend.
 - **Month-over-month:** the Insight month level shows expense delta vs the previous month (`computeMonthDelta`, `db.getMonthExpenseTotal` bucketed in local time); hidden when there's no prior-month baseline.
+- **Recurring templates:** optional per-category auto-log schedule — daily, weekly (weekday), or monthly (day 1–28), max one template per category. On app open (cold start **and** foreground resume, via an `AppState` listener in `app/_layout.tsx`) `fireDueRecurringTemplates()` silently logs each due template as a normal expense (SQLite + sync queue, one atomic batch) and stamps `last_fired_date` (local `YYYY-MM-DD`) as a same-day dedup. Strict day match — no catch-up for days the app stayed closed. Editing a template preserves its `lastFiredDate` so it can't double-fire the same day. Set from the quick-actions menu (*Set recurring* → `RecurringSheet`); view/delete all from Settings → General → Recurring expenses (`RecurringListSheet`). Deleting a category cascades to its template; backup import wipes all templates (backups don't carry them). Pure due-check in `lib/recurring.ts`, firing in `lib/recurringIO.ts`, state in `useRecurringStore`.
 - **Backup:** Settings → Data exports all categories + transactions to a JSON file (share sheet) and imports one back. Import **replaces** all local data via an atomic `db.replaceAllData` (wipe + bulk-insert in one transaction, clears the sync queue), then reloads the stores. Pure (de)serialization/validation in `lib/backup.ts`; device IO in `lib/backupIO.ts`.
 - **Pure logic is extracted + unit-tested:** `currency`, `period`, `bubbleSize`, `insights`, `budget`, `forecast`, `backup` import only types, so Jest runs them with no native shims. Keep new pure logic in `lib/*` (no RN/expo imports) with a sibling `*.test.ts`.
 
@@ -238,6 +244,7 @@ eas build --platform android --profile preview   # APK build
 categories  (id, name, emoji, color_key, position_x, position_y, created_at, budget)
 transactions (id, category_id, amount, transacted_at, note, synced)
 sync_queue  (id, operation, entity, payload, created_at)
+recurring_templates (id, category_id, amount, note, frequency, day_of_week, day_of_month, last_fired_date, active, created_at)
 ```
 
 `budget` (monthly cap, nullable) is added by an idempotent PRAGMA-probed `ALTER` on existing installs, same pattern as `transactions.type`.

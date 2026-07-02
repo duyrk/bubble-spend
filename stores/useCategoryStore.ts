@@ -9,6 +9,7 @@ import { getDefaultCategories } from '@/lib/i18n/defaultCategories';
 import { INCOME_CATEGORY_ID } from '@/types';
 import type { BubbleColorKey, Category, Transaction } from '@/types';
 import { create } from 'zustand';
+import { useRecurringStore } from './useRecurringStore';
 
 type CategoryState = {
   categories: Category[];
@@ -109,9 +110,12 @@ export const useCategoryStore = create<CategoryState>((set, get) => ({
   },
 
   deleteCategory: (id) => {
-    // Cascade: drop the category row AND every transaction filed under it.
+    // Cascade: drop the category row AND every transaction filed under it,
+    // plus any recurring template — otherwise it would keep auto-logging
+    // expenses against a category that no longer exists.
     db.deleteCategory(id);
     db.deleteTransactionsByCategory(id);
+    useRecurringStore.getState().removeForCategory(id);
     set((state) => {
       const sizes = { ...state.sizes };
       delete sizes[id];

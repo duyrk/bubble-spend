@@ -28,7 +28,7 @@ Each bubble shows:
 - **Tap** (< 500 ms): opens the numpad modal for that category (expense mode by default)
 - **Long press** (≥ 500 ms): opens the **quick-actions menu** (haptic feedback)
 
-**Quick-actions menu** — an iOS-style long-press menu: a blurred backdrop dims the field and a menu pops anchored next to the pressed bubble (its window frame is captured via `measure()`). Rows: *Log expense* (opens the numpad), *Set budget* (→ a monthly-cap editor sheet, showing the current cap if any), *Rearrange* (→ drag mode), and *Delete category* (destructive, red → the delete confirmation). Tap the backdrop to dismiss.
+**Quick-actions menu** — an iOS-style long-press menu: a blurred backdrop dims the field and a menu pops anchored next to the pressed bubble (its window frame is captured via `measure()`). Rows: *Log expense* (opens the numpad), *Set budget* (→ a monthly-cap editor sheet, showing the current cap if any), *Set recurring* (→ a recurring-template editor sheet, showing the current amount if any), *Rearrange* (→ drag mode), and *Delete category* (destructive, red → the delete confirmation). Tap the backdrop to dismiss.
 
 **Drag mode** (entered via *Rearrange*):
 - All bubbles do a gentle, slow wobble
@@ -99,6 +99,7 @@ Entry point: chart icon button in the History screen header.
 
 **General**
 - Currency: VND / USD / EUR / GBP / JPY / KRW / SGD / THB (default: auto-detected from device region)
+- Recurring expenses — shows the active template count; opens a sheet listing every template (category, schedule, amount, note) with per-row delete. Templates are created from Home (long-press a bubble → *Set recurring*).
 
 **Notifications**
 - Daily reminder toggle — requests OS permission on first enable
@@ -122,6 +123,14 @@ Entry point: chart icon button in the History screen header.
 - All transactions carry a `type: 'expense' | 'income'` field (defaults to `'expense'` for rows that existed before the migration)
 
 ---
+
+## Recurring Expenses
+
+- One optional template per category: amount + note + schedule — daily, weekly (pick a weekday), or monthly (pick a day 1–28)
+- On app open (cold start and foreground resume), due templates silently auto-log as normal expense transactions stamped "now" — no fireworks, no undo toast
+- `last_fired_date` (local `YYYY-MM-DD`) dedups to at most one fire per template per day; strict day match, no catch-up for days the app stayed closed
+- Editing a template keeps its fired-today stamp (no double-log); deleting a category deletes its template; importing a backup wipes all templates
+- Set via long-press menu → *Set recurring*; manage via Settings → General → Recurring expenses
 
 ## Category Management
 
@@ -159,13 +168,13 @@ Entry point: chart icon button in the History screen header.
 - Per-category monthly budgets with an on-bubble progress ring; set via the drag-mode bubble action sheet
 - Spending pace projection on the "This month" tab (on-track / over-budget against summed caps)
 - Month-over-month expense comparison on the Insight month level
-- Jest unit tests for the pure logic layer (currency, period, bubble size, insights, backup, budget, forecast)
+- Jest unit tests for the pure logic layer (currency, period, bubble size, insights, backup, budget, forecast, recurring)
+- Recurring expense templates — per-category daily/weekly/monthly auto-log on app open, managed from the quick-actions menu and Settings
 
 ## Not Yet Implemented
 
 - Backend API integration (sync queue writes but never flushes)
 - FolderBubble grouping (component scaffolded, not wired)
 - Editing a transaction's income/expense type, or its exact time of day (the edit sheet covers amount, date, category, and note)
-- Recurring expense templates (e.g. rent auto-logs on the 1st)
 - Over-budget *push notifications* — the budget warning is visual-only (ring color + bubble halo); no notification is sent
 - A "smarter" daily reminder (skip if already logged today, surface today's running total) — doing this reliably needs background tasks or the backend; today's reminder is a fixed daily nudge

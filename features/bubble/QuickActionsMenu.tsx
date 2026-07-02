@@ -28,6 +28,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useUIStore } from '@/stores/useUIStore';
 import { useCategoryStore } from '@/stores/useCategoryStore';
+import { useRecurringStore } from '@/stores/useRecurringStore';
 import { RADII } from '@/constants/theme';
 import { GlassSurface } from '@/components/ui/GlassSurface';
 
@@ -46,12 +47,15 @@ export function QuickActionsMenu() {
   const anchor = useUIStore((s) => s.pendingActionAnchor);
   const cancelBubbleActions = useUIStore((s) => s.cancelBubbleActions);
   const requestEditBudget = useUIStore((s) => s.requestEditBudget);
+  const requestEditRecurring = useUIStore((s) => s.requestEditRecurring);
   const requestDeleteCategory = useUIStore((s) => s.requestDeleteCategory);
   const enterDragMode = useUIStore((s) => s.enterDragMode);
   const openModal = useUIStore((s) => s.openModal);
   const categories = useCategoryStore((s) => s.categories);
+  const templates = useRecurringStore((s) => s.templates);
 
   const target = categories.find((c) => c.id === pendingActionCategoryId);
+  const recurring = templates.find((tmpl) => tmpl.categoryId === pendingActionCategoryId);
   const visible = pendingActionCategoryId !== null && target != null;
 
   // Pop/scale entrance.
@@ -96,6 +100,12 @@ export function QuickActionsMenu() {
     Haptics.selectionAsync();
     requestEditBudget(target.id);
   }, [target, requestEditBudget]);
+
+  const handleRecurring = useCallback(() => {
+    if (!target) return;
+    Haptics.selectionAsync();
+    requestEditRecurring(target.id);
+  }, [target, requestEditRecurring]);
 
   const handleRearrange = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -154,6 +164,15 @@ export function QuickActionsMenu() {
             color={colors.text.primary}
             onPress={handleBudget}
             right={target?.budget ? format(target.budget) : undefined}
+            rightColor={colors.text.tertiary}
+          />
+          <View style={[styles.sep, { backgroundColor: colors.glass.border }]} />
+          <ActionRow
+            icon="repeat"
+            label={t('setRecurring')}
+            color={colors.text.primary}
+            onPress={handleRecurring}
+            right={recurring ? format(recurring.amount) : undefined}
             rightColor={colors.text.tertiary}
           />
           <View style={[styles.sep, { backgroundColor: colors.glass.border }]} />
