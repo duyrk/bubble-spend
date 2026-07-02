@@ -17,7 +17,7 @@
 - [x] Custom category name + emoji input (not just presets)
 - [x] Onboarding flow for first launch (uses `hasCompletedOnboarding` flag)
 - [ ] FolderBubble — group multiple categories into one super-bubble
-- [ ] Swipe gesture between period tabs on Home (in addition to tap)
+- [x] Swipe gesture between period tabs on Home (in addition to tap)
 
 ## v1.2 — Budget & goals
 - [x] Per-category budget setting (long-press a bubble → quick-actions menu → "Set budget")
@@ -25,7 +25,7 @@
 - [x] Alert when approaching / over budget limit (visual: ring color + red bubble halo)
 - [x] Spending pace — projected month-end total on the "This month" tab, on-track vs budget
 - [ ] Monthly savings goal — larger fireworks celebration when net is positive at month end
-- [ ] Recurring expense templates (e.g. rent auto-logs on the 1st)
+- [x] Recurring expense templates (e.g. rent auto-logs on the 1st) — daily/weekly/monthly, fired on app open
 
 ## v1.3 — Insights
 - [x] Category spending breakdown per period ("Where it went" — bars on History)

@@ -62,6 +62,26 @@ export type SyncQueueItem = {
   createdAt: number;
 };
 
+// --- Recurring expense templates ---
+// One template per category. On app open (cold start or foreground), any due
+// template silently logs a regular expense transaction — see lib/recurring.ts
+// (pure due-check) and lib/recurringIO.ts (firing orchestration).
+
+export type RecurringFrequency = 'daily' | 'weekly' | 'monthly';
+
+export type RecurringTemplate = {
+  id: string;
+  categoryId: string;
+  amount: number;
+  note?: string;
+  frequency: RecurringFrequency;
+  dayOfWeek?: number; // 0=Sun … 6=Sat — set when frequency is 'weekly'
+  dayOfMonth?: number; // 1–28 — set when frequency is 'monthly'
+  lastFiredDate?: string; // local 'YYYY-MM-DD' of the last auto-log; absent = never fired
+  active: boolean;
+  createdAt: number;
+};
+
 // --- Insight (year → month → week → day drill-down) aggregates ---
 // Each level's totals come straight from a GROUP BY query in lib/db.ts. Buckets
 // with no activity are absent from the rows (the data hook fills the gaps).

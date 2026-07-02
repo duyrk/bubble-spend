@@ -23,6 +23,8 @@ type UIState = {
   pendingActionAnchor: { cx: number; top: number; bottom: number } | null;
   // Category id whose monthly-budget editor sheet is open. null = no sheet.
   budgetEditCategoryId: string | null;
+  // Category id whose recurring-template editor sheet is open. null = no sheet.
+  recurringEditCategoryId: string | null;
   // Category id pending delete confirmation. null = no sheet.
   pendingDeleteCategoryId: string | null;
   // True while the numpad sheet is anywhere on screen — from the instant it opens
@@ -42,6 +44,8 @@ type UIState = {
   cancelBubbleActions: () => void;
   requestEditBudget: (categoryId: string) => void;
   cancelEditBudget: () => void;
+  requestEditRecurring: (categoryId: string) => void;
+  cancelEditRecurring: () => void;
   requestDeleteCategory: (categoryId: string) => void;
   cancelDeleteCategory: () => void;
   setSheetVisible: (visible: boolean) => void;
@@ -54,6 +58,7 @@ export const useUIStore = create<UIState>((set) => ({
   pendingActionCategoryId: null,
   pendingActionAnchor: null,
   budgetEditCategoryId: null,
+  recurringEditCategoryId: null,
   pendingDeleteCategoryId: null,
   sheetVisible: false,
 
@@ -72,6 +77,10 @@ export const useUIStore = create<UIState>((set) => ({
   requestEditBudget: (categoryId) =>
     set({ budgetEditCategoryId: categoryId, pendingActionCategoryId: null, pendingActionAnchor: null }),
   cancelEditBudget: () => set({ budgetEditCategoryId: null }),
+  // Open the recurring editor for a category, closing the quick-actions menu that led here.
+  requestEditRecurring: (categoryId) =>
+    set({ recurringEditCategoryId: categoryId, pendingActionCategoryId: null, pendingActionAnchor: null }),
+  cancelEditRecurring: () => set({ recurringEditCategoryId: null }),
   // Open the delete confirm, closing the quick-actions menu that led here.
   requestDeleteCategory: (categoryId) =>
     set({ pendingDeleteCategoryId: categoryId, pendingActionCategoryId: null, pendingActionAnchor: null }),

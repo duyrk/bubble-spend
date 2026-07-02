@@ -7,8 +7,10 @@ import * as Application from 'expo-application';
 import { SettingsGroup } from './SettingsGroup';
 import { SettingsRow } from './SettingsRow';
 import { OptionPickerModal } from './OptionPickerModal';
+import { RecurringListSheet } from './RecurringListSheet';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { useCategoryStore } from '@/stores/useCategoryStore';
+import { useRecurringStore } from '@/stores/useRecurringStore';
 import { useTransactionStore } from '@/stores/useTransactionStore';
 import { exportData, pickBackup, applyBackup } from '@/lib/backupIO';
 import { useColors } from '@/hooks/useTheme';
@@ -55,6 +57,9 @@ export function SettingsScreen() {
   const setReminderTime = useSettingsStore((s) => s.setReminderTime);
 
   const [picker, setPicker] = useState<PickerKind>(null);
+  const [recurringListVisible, setRecurringListVisible] = useState(false);
+
+  const recurringCount = useRecurringStore((s) => s.templates.length);
 
   useEffect(() => {
     if (notificationsEnabled) {
@@ -82,8 +87,11 @@ export function SettingsScreen() {
 
   // After a restore, re-read categories + the active period's transactions from
   // SQLite and re-scale the bubbles so Home/History reflect the imported data.
+  // Recurring templates are wiped by the import (backups don't carry them), so
+  // the in-memory list must be re-read too.
   const reloadAfterImport = useCallback(() => {
     useCategoryStore.getState().load();
+    useRecurringStore.getState().load();
     const period = useTransactionStore.getState().period;
     useTransactionStore.getState().loadByPeriod(period);
     useCategoryStore.getState().recalcSizes(useTransactionStore.getState().transactions);
@@ -166,6 +174,11 @@ export function SettingsScreen() {
             label={t('currency')}
             value={currency}
             onPress={() => setPicker('currency')}
+          />
+          <SettingsRow
+            label={t('recurringExpenses')}
+            value={recurringCount > 0 ? String(recurringCount) : t('none')}
+            onPress={() => setRecurringListVisible(true)}
             isLast
           />
         </SettingsGroup>
@@ -251,6 +264,11 @@ export function SettingsScreen() {
         }))}
         onSelect={setCurrency}
         onClose={() => setPicker(null)}
+      />
+
+      <RecurringListSheet
+        visible={recurringListVisible}
+        onClose={() => setRecurringListVisible(false)}
       />
 
       <OptionPickerModal

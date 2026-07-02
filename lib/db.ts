@@ -14,6 +14,8 @@ import type {
   CategoryTotal,
   TransactionWithCategory,
   BubbleColorKey,
+  RecurringFrequency,
+  RecurringTemplate,
 } from '@/types';
 
 let _db: SQLite.SQLiteDatabase | null = null;
@@ -76,6 +78,21 @@ export function initDb(): void {
       operation TEXT NOT NULL,
       entity TEXT NOT NULL,
       payload TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+  `);
+
+  db.execSync(`
+    CREATE TABLE IF NOT EXISTS recurring_templates (
+      id TEXT PRIMARY KEY,
+      category_id TEXT NOT NULL,
+      amount REAL NOT NULL,
+      note TEXT,
+      frequency TEXT NOT NULL,
+      day_of_week INTEGER,
+      day_of_month INTEGER,
+      last_fired_date TEXT,
+      active INTEGER NOT NULL DEFAULT 1,
       created_at INTEGER NOT NULL
     );
   `);
@@ -268,6 +285,9 @@ export function replaceAllData(categories: Category[], transactions: Transaction
     db.runSync('DELETE FROM sync_queue');
     db.runSync('DELETE FROM transactions');
     db.runSync('DELETE FROM categories');
+    // Backups don't carry recurring templates, and the restored categories have
+    // different ids — surviving templates would dangle and auto-log orphans.
+    db.runSync('DELETE FROM recurring_templates');
     for (const cat of categories) insertCategory(cat);
     for (const tx of transactions) insertTransaction(tx);
   });
@@ -468,6 +488,76 @@ export function getCategoryTotalsByWeek(
     colorKey: r.color_key as BubbleColorKey,
     expense: r.expense ?? 0,
   }));
+}
+
+// --- Recurring expense templates ---
+
+export function getAllRecurringTemplates(): RecurringTemplate[] {
+  const db = getDb();
+  const rows = db.getAllSync<{
+    id: string;
+    category_id: string;
+    amount: number;
+    note: string | null;
+    frequency: string;
+    day_of_week: number | null;
+    day_of_month: number | null;
+    last_fired_date: string | null;
+    active: number;
+    created_at: number;
+  }>('SELECT * FROM recurring_templates ORDER BY created_at ASC');
+
+  return rows.map((r) => ({
+    id: r.id,
+    categoryId: r.category_id,
+    amount: r.amount,
+    note: r.note ?? undefined,
+    frequency: r.frequency as RecurringFrequency,
+    dayOfWeek: r.day_of_week ?? undefined,
+    dayOfMonth: r.day_of_month ?? undefined,
+    lastFiredDate: r.last_fired_date ?? undefined,
+    active: r.active === 1,
+    createdAt: r.created_at,
+  }));
+}
+
+export function insertRecurringTemplate(t: RecurringTemplate): void {
+  const db = getDb();
+  db.runSync(
+    `INSERT OR REPLACE INTO recurring_templates
+       (id, category_id, amount, note, frequency, day_of_week, day_of_month, last_fired_date, active, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      t.id,
+      t.categoryId,
+      t.amount,
+      t.note ?? null,
+      t.frequency,
+      t.dayOfWeek ?? null,
+      t.dayOfMonth ?? null,
+      t.lastFiredDate ?? null,
+      t.active ? 1 : 0,
+      t.createdAt,
+    ],
+  );
+}
+
+export function deleteRecurringTemplate(id: string): void {
+  const db = getDb();
+  db.runSync('DELETE FROM recurring_templates WHERE id = ?', [id]);
+}
+
+// Cascade partner of deleteCategory — a template pointing at a deleted category
+// would silently auto-log orphaned transactions.
+export function deleteRecurringTemplatesByCategory(categoryId: string): void {
+  const db = getDb();
+  db.runSync('DELETE FROM recurring_templates WHERE category_id = ?', [categoryId]);
+}
+
+// Stamp the local day a template last auto-logged — the same-day dedup marker.
+export function updateRecurringLastFired(id: string, date: string): void {
+  const db = getDb();
+  db.runSync('UPDATE recurring_templates SET last_fired_date = ? WHERE id = ?', [date, id]);
 }
 
 // --- Sync queue ---

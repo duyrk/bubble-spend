@@ -10,6 +10,7 @@ import { BubbleItem } from './BubbleItem';
 import { AddCategorySheet } from './AddCategorySheet';
 import { QuickActionsMenu } from './QuickActionsMenu';
 import { BudgetSheet } from './BudgetSheet';
+import { RecurringSheet } from './RecurringSheet';
 import { DeleteCategorySheet } from './DeleteCategorySheet';
 
 interface BubbleFieldProps {
@@ -43,6 +44,7 @@ export function BubbleField({ swipeGesture }: BubbleFieldProps) {
       {!dragMode && <AddCategorySheet />}
       <QuickActionsMenu />
       <BudgetSheet />
+      <RecurringSheet />
       <DeleteCategorySheet />
     </View>
   );
