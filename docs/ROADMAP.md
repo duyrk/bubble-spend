@@ -29,10 +29,10 @@
 
 ## v1.3 — Insights
 - [x] Category spending breakdown per period ("Where it went" — bars on History)
-- [ ] Spending trend chart (line chart, per category over time)
-- [ ] "Peak spending" insight — which day/hour you spend most
+- [x] Spending trend chart (line chart, per category over time) — year level, All + per-category chips
+- [x] "Peak spending" insight — which day/hour you spend most (month level "Spending habits" row)
 - [x] Month-over-month comparison (expense delta vs previous month on the Insight month level)
-- [ ] Largest single transaction highlight
+- [x] Largest single transaction highlight (month level card → tap opens its day sheet)
 - [ ] iOS/Android widget — today's total at a glance
 
 ## v1.4 — Backend & sync
