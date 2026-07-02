@@ -490,6 +490,97 @@ export function getCategoryTotalsByWeek(
   }));
 }
 
+// The month's single biggest expense, with its category — the "biggest expense"
+// highlight on the Insight month level. Ties go to the most recent transaction.
+export function getLargestExpenseByMonth(
+  year: number,
+  month: number,
+): TransactionWithCategory | null {
+  const db = getDb();
+  const rows = db.getAllSync<{
+    id: string;
+    category_id: string;
+    amount: number;
+    type: string | null;
+    transacted_at: number;
+    note: string | null;
+    synced: number;
+    category_name: string;
+    emoji: string;
+    color_key: string;
+  }>(
+    `SELECT
+       t.id, t.amount, t.transacted_at, t.note, t.category_id, t.synced, t.type,
+       c.name AS category_name, c.emoji, c.color_key
+     FROM transactions t
+     JOIN categories c ON t.category_id = c.id
+     WHERE strftime('%Y-%m', datetime(t.transacted_at/1000,'unixepoch','localtime'))
+           = printf('%04d-%02d', ?, ?)
+       AND t.category_id != '__income__'
+     ORDER BY t.amount DESC, t.transacted_at DESC
+     LIMIT 1`,
+    [year, month],
+  );
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    id: r.id,
+    categoryId: r.category_id,
+    amount: r.amount,
+    type: (r.type === 'income' ? 'income' : 'expense') as TransactionType,
+    transactedAt: r.transacted_at,
+    note: r.note ?? undefined,
+    synced: r.synced === 1,
+    categoryName: r.category_name,
+    emoji: r.emoji,
+    colorKey: r.color_key as BubbleColorKey,
+  };
+}
+
+// Expense totals grouped by (weekday, hour-of-day) for a month — the raw cells
+// for computePeakSpending (lib/peaks.ts), which reduces them to peak day/time.
+export function getWeekdayHourSpend(
+  year: number,
+  month: number,
+): { weekday: number; hour: number; total: number }[] {
+  const db = getDb();
+  const rows = db.getAllSync<{ weekday: number; hour: number; total: number | null }>(
+    `SELECT
+       CAST(strftime('%w', datetime(transacted_at/1000,'unixepoch','localtime')) AS INTEGER) AS weekday,
+       CAST(strftime('%H', datetime(transacted_at/1000,'unixepoch','localtime')) AS INTEGER) AS hour,
+       SUM(amount) AS total
+     FROM transactions
+     WHERE category_id != '__income__'
+       AND strftime('%Y-%m', datetime(transacted_at/1000,'unixepoch','localtime'))
+           = printf('%04d-%02d', ?, ?)
+     GROUP BY weekday, hour`,
+    [year, month],
+  );
+  return rows.map((r) => ({ weekday: r.weekday, hour: r.hour, total: r.total ?? 0 }));
+}
+
+// One category's expense total per month of a year — the per-category series
+// behind the year-level trend chart. Months without spend are absent (the
+// chart component fills the gaps with zeros).
+export function getMonthlyCategoryExpense(
+  year: number,
+  categoryId: string,
+): { month: number; expense: number }[] {
+  const db = getDb();
+  const rows = db.getAllSync<{ month: number; expense: number | null }>(
+    `SELECT
+       CAST(strftime('%m', datetime(transacted_at/1000, 'unixepoch', 'localtime')) AS INTEGER) AS month,
+       SUM(amount) AS expense
+     FROM transactions
+     WHERE category_id = ?
+       AND strftime('%Y', datetime(transacted_at/1000, 'unixepoch', 'localtime')) = ?
+     GROUP BY month
+     ORDER BY month`,
+    [categoryId, String(year)],
+  );
+  return rows.map((r) => ({ month: r.month, expense: r.expense ?? 0 }));
+}
+
 // --- Recurring expense templates ---
 
 export function getAllRecurringTemplates(): RecurringTemplate[] {

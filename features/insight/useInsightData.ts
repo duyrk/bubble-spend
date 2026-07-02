@@ -10,6 +10,7 @@
 
 import { useEffect, useState } from 'react';
 import * as db from '@/lib/db';
+import type { PeakCell } from '@/lib/peaks';
 import type {
   CategoryTotal,
   DailyTotal,
@@ -39,11 +40,14 @@ export type MonthDetail = {
   weekly: WeeklyTotal[];
   categories: CategoryTotal[];
   prevExpense: number; // previous month's total expense, for the MoM comparison
+  largest: TransactionWithCategory | null; // the month's biggest single expense
+  peakCells: PeakCell[]; // weekday×hour expense cells → peak day/time habits
 };
 
 // Month level — 4 weekly totals + the month's category breakdown + the previous
-// month's expense total (for the month-over-month delta). January's previous
-// month rolls back to the prior December.
+// month's expense total (for the month-over-month delta) + the biggest-expense
+// and peak-spending highlights. January's previous month rolls back to the
+// prior December.
 export function useMonthDetail(year: number, month: number): MonthDetail | null {
   const [data, setData] = useState<MonthDetail | null>(null);
   useEffect(() => {
@@ -53,9 +57,30 @@ export function useMonthDetail(year: number, month: number): MonthDetail | null 
       weekly: db.getWeeklyTotals(year, month),
       categories: db.getCategoryTotalsByMonth(year, month),
       prevExpense: db.getMonthExpenseTotal(prevYear, prevMonth),
+      largest: db.getLargestExpenseByMonth(year, month),
+      peakCells: db.getWeekdayHourSpend(year, month),
     });
   }, [year, month]);
   return data;
+}
+
+// Year-level trend chart, per-category series — 12 expense slots (0-filled for
+// silent months). Only queried when a category chip is selected; the "All"
+// series comes from the year level's already-loaded monthly totals.
+export function useCategoryMonthly(year: number, categoryId: string | null): number[] | null {
+  const [data, setData] = useState<number[] | null>(null);
+  useEffect(() => {
+    if (categoryId === null) {
+      setData(null);
+      return;
+    }
+    const slots = new Array<number>(12).fill(0);
+    for (const row of db.getMonthlyCategoryExpense(year, categoryId)) {
+      slots[row.month - 1] = row.expense;
+    }
+    setData(slots);
+  }, [year, categoryId]);
+  return categoryId === null ? null : data;
 }
 
 export type WeekDetail = { daily: DailyTotal[]; categories: CategoryTotal[] };

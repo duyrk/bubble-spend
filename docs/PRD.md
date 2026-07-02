@@ -81,9 +81,9 @@ Empty state: "No transactions yet" + hint to go log one from Home.
 
 Entry point: chart icon button in the History screen header.
 
-**Year overview** — 12 month bubbles in a 4×3 grid. Bubble size scales linearly with spending (52px base → 82px max, same formula as home). Current month has a ring indicator. Future months are dimmed and non-tappable. Year navigator (← →). Summary row: total expense / income / net for the year.
+**Year overview** — 12 month bubbles in a 4×3 grid. Bubble size scales linearly with spending (52px base → 82px max, same formula as home). Current month has a ring indicator. Future months are dimmed and non-tappable. Year navigator (← →). Summary row: total expense / income / net for the year. Below the grid, a **spending trend** line chart (react-native-svg) plots the year's monthly expense totals, filterable via an "All" + per-category emoji chip row (line tinted with the bubble's colour); for the current year the line stops at the current month instead of dipping to zero.
 
-**Month detail** — slides in from the right. Shows expense / income / net stats, a **month-over-month** delta (this month's expense vs the previous month — up in red, down in green, hidden when there's no prior-month baseline), category breakdown bars (actual DB totals), and 4 tappable week columns. Tap a week column → week detail.
+**Month detail** — slides in from the right. Shows expense / income / net stats, a **month-over-month** delta (this month's expense vs the previous month — up in red, down in green, hidden when there's no prior-month baseline), category breakdown bars (actual DB totals), 4 tappable week columns, a **Spending habits** row (the month's peak weekday and peak time-of-day bucket — morning/afternoon/evening/night — each with its summed amount), and a **Biggest expense** card showing the month's largest single expense (tap → that day's transaction sheet). Tap a week column → week detail.
 
 **Week detail** — shows 7-day bar chart (Mon–Sun), stats (total / peak day / daily avg), and category breakdown for that week. Tap a day column → day sheet.
 
@@ -170,6 +170,8 @@ Entry point: chart icon button in the History screen header.
 - Month-over-month expense comparison on the Insight month level
 - Jest unit tests for the pure logic layer (currency, period, bubble size, insights, backup, budget, forecast, recurring)
 - Recurring expense templates — per-category daily/weekly/monthly auto-log on app open, managed from the quick-actions menu and Settings
+- Insight month highlights — "Spending habits" (peak day/time) row + tappable biggest-expense card
+- Year-level spending trend line chart with per-category filter (react-native-svg)
 
 ## Not Yet Implemented
 

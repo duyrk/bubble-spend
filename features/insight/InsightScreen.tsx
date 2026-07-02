@@ -41,13 +41,19 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
+import Svg, { Circle, Line, Polyline } from 'react-native-svg';
 import { useBubbleColors, useColors, useResolvedTheme } from '@/hooks/useTheme';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useTranslation } from '@/hooks/useTranslation';
+import { useCategoryStore } from '@/stores/useCategoryStore';
 import { computeMonthDelta } from '@/lib/forecast';
+import { computePeakSpending } from '@/lib/peaks';
+import type { PeakSpending, TimeBucket } from '@/lib/peaks';
+import { computeTrendPoints } from '@/lib/trend';
 import { GlassSurface } from '@/components/ui/GlassSurface';
 import { BLUR, RADII, SPRING } from '@/constants/theme';
-import { MONTHS, MONTHS_SHORT, WEEKDAYS_SHORT } from '@/lib/i18n';
+import { MONTHS, MONTHS_SHORT, WEEKDAYS_SHORT, formatShortDate } from '@/lib/i18n';
+import type { TranslationKey } from '@/lib/i18n';
 import type {
   BubbleColorKey,
   CategoryTotal,
@@ -56,6 +62,7 @@ import type {
   WeeklyTotal,
 } from '@/types';
 import {
+  useCategoryMonthly,
   useDayTransactions,
   useMonthDetail,
   useMonthlyTotals,
@@ -98,6 +105,14 @@ const BUBBLE_KEYS: BubbleColorKey[] = [
 const DAY_NAMES_FULL: Record<'en' | 'vi', string[]> = {
   en: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
   vi: ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'],
+};
+
+// Peak-time bucket → its translation key (the "Spending habits" row).
+const BUCKET_KEY: Record<TimeBucket, TranslationKey> = {
+  morning: 'timeMorning',
+  afternoon: 'timeAfternoon',
+  evening: 'timeEvening',
+  night: 'timeNight',
 };
 
 type InsightLevel =
@@ -231,6 +246,7 @@ export function InsightScreen() {
             mi={level.mi}
             onBack={pop}
             onSelectWeek={(wi) => push({ type: 'week', mi: level.mi, wi })}
+            onSelectDay={(day, weekday) => openDay({ mi: level.mi, day, weekday })}
           />
         );
       case 'week':
@@ -349,32 +365,40 @@ function YearLevel({
         {monthly === null ? (
           <YearSkeleton />
         ) : (
-          <View style={styles.grid}>
-            {Array.from({ length: 12 }, (_, i) => {
-              const mi = i + 1;
-              const data = byMonth.get(mi);
-              const expense = data?.expense ?? 0;
-              const isFuture = year === currentYear && mi > currentMonth;
-              const isCurrent = year === currentYear && mi === currentMonth;
-              const hasData = expense > 0;
-              const size = hasData
-                ? BUBBLE_BASE + (expense / maxExpense) * (BUBBLE_MAX - BUBBLE_BASE)
-                : BUBBLE_EMPTY;
-              return (
-                <MonthBubble
-                  key={mi}
-                  idx={i}
-                  label={MONTHS_SHORT[language][i]}
-                  amount={hasData ? compact(expense) : null}
-                  size={size}
-                  colorKey={BUBBLE_KEYS[i % BUBBLE_KEYS.length]}
-                  isCurrent={isCurrent}
-                  isFuture={isFuture}
-                  onPress={() => onSelectMonth(mi)}
-                />
-              );
-            })}
-          </View>
+          <>
+            <View style={styles.grid}>
+              {Array.from({ length: 12 }, (_, i) => {
+                const mi = i + 1;
+                const data = byMonth.get(mi);
+                const expense = data?.expense ?? 0;
+                const isFuture = year === currentYear && mi > currentMonth;
+                const isCurrent = year === currentYear && mi === currentMonth;
+                const hasData = expense > 0;
+                const size = hasData
+                  ? BUBBLE_BASE + (expense / maxExpense) * (BUBBLE_MAX - BUBBLE_BASE)
+                  : BUBBLE_EMPTY;
+                return (
+                  <MonthBubble
+                    key={mi}
+                    idx={i}
+                    label={MONTHS_SHORT[language][i]}
+                    amount={hasData ? compact(expense) : null}
+                    size={size}
+                    colorKey={BUBBLE_KEYS[i % BUBBLE_KEYS.length]}
+                    isCurrent={isCurrent}
+                    isFuture={isFuture}
+                    onPress={() => onSelectMonth(mi)}
+                  />
+                );
+              })}
+            </View>
+            <TrendSection
+              year={year}
+              currentYear={currentYear}
+              currentMonth={currentMonth}
+              monthly={monthly}
+            />
+          </>
         )}
         <Text style={[styles.hint, { color: colors.text.tertiary }]}>{t('insight.tapDetail')}</Text>
       </ScrollView>
@@ -490,6 +514,156 @@ function MonthBubble({
 }
 
 // ---------------------------------------------------------------------------
+// Trend section (year level) — monthly expense line, filterable per category
+// ---------------------------------------------------------------------------
+
+// Chart geometry — fixed height, width follows the screen minus scrollBody padding.
+const TREND_HEIGHT = 140;
+const TREND_PAD_X = 6;
+const TREND_PAD_TOP = 12;
+const TREND_PAD_BOTTOM = 8;
+const TREND_TICK_MONTHS = [0, 3, 6, 9]; // Jan / Apr / Jul / Oct labels
+
+interface TrendSectionProps {
+  year: number;
+  currentYear: number;
+  currentMonth: number;
+  monthly: MonthlyTotal[];
+}
+
+function TrendSection({ year, currentYear, currentMonth, monthly }: TrendSectionProps) {
+  const colors = useColors();
+  const bubbleColors = useBubbleColors();
+  const { t, language } = useTranslation();
+  const { width: screenWidth } = useWindowDimensions();
+  const categories = useCategoryStore((s) => s.categories);
+
+  const [catId, setCatId] = useState<string | null>(null);
+  const catSeries = useCategoryMonthly(year, catId);
+
+  // "All" series comes from the year level's already-loaded monthly totals.
+  const allSlots = new Array<number>(12).fill(0);
+  for (const m of monthly) allSlots[m.month - 1] = m.expense;
+
+  // For the current year, plot only up to the current month — trailing zeros
+  // for months that haven't happened would read as a crash to nothing. The
+  // 12-slot span keeps a partial year at its true horizontal position.
+  const monthCount = year === currentYear ? currentMonth : 12;
+  const series = (catId ? catSeries : allSlots)?.slice(0, monthCount) ?? null;
+  const points = series ? computeTrendPoints(series, 12) : null;
+
+  const selectedCat = categories.find((c) => c.id === catId);
+  const lineColor = selectedCat ? bubbleColors[selectedCat.colorKey].border : colors.accent;
+
+  const chartW = screenWidth - 40; // scrollBody horizontal padding
+  const innerW = chartW - TREND_PAD_X * 2;
+  const innerH = TREND_HEIGHT - TREND_PAD_TOP - TREND_PAD_BOTTOM;
+  const px = (x: number) => TREND_PAD_X + x * innerW;
+  const py = (y: number) => TREND_PAD_TOP + (1 - y) * innerH;
+
+  return (
+    <View>
+      <SectionTitle title={t('insight.trend')} />
+
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.chipRow}
+      >
+        <Pressable
+          onPress={() => {
+            Haptics.selectionAsync();
+            setCatId(null);
+          }}
+          style={[
+            styles.allChip,
+            catId === null
+              ? { backgroundColor: colors.accent }
+              : {
+                  backgroundColor: colors.glass.base,
+                  borderWidth: StyleSheet.hairlineWidth,
+                  borderColor: colors.glass.border,
+                },
+          ]}
+        >
+          <Text
+            style={[styles.allChipText, { color: catId === null ? '#fff' : colors.text.secondary }]}
+          >
+            {t('insight.allCategories')}
+          </Text>
+        </Pressable>
+        {categories.map((c) => {
+          const sw = bubbleColors[c.colorKey];
+          const sel = c.id === catId;
+          return (
+            <Pressable
+              key={c.id}
+              onPress={() => {
+                Haptics.selectionAsync();
+                setCatId(c.id);
+              }}
+              style={[
+                styles.catChip,
+                {
+                  backgroundColor: sel ? sw.glassFill : colors.glass.base,
+                  borderColor: sel ? colors.accent : colors.glass.border,
+                  borderWidth: sel ? 1.5 : StyleSheet.hairlineWidth,
+                },
+              ]}
+            >
+              <Text style={styles.catChipEmoji}>{c.emoji}</Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+
+      {points ? (
+        <View>
+          <Svg width={chartW} height={TREND_HEIGHT}>
+            <Line
+              x1={TREND_PAD_X}
+              y1={TREND_HEIGHT - TREND_PAD_BOTTOM}
+              x2={chartW - TREND_PAD_X}
+              y2={TREND_HEIGHT - TREND_PAD_BOTTOM}
+              stroke={colors.glass.borderStrong}
+              strokeWidth={1}
+            />
+            <Polyline
+              points={points.map((p) => `${px(p.x)},${py(p.y)}`).join(' ')}
+              fill="none"
+              stroke={lineColor}
+              strokeWidth={2}
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+            {points.map((p, i) => (
+              <Circle key={i} cx={px(p.x)} cy={py(p.y)} r={3} fill={lineColor} />
+            ))}
+          </Svg>
+          <View style={styles.tickRow}>
+            {TREND_TICK_MONTHS.map((m) => (
+              <Text
+                key={m}
+                style={[
+                  styles.tickLabel,
+                  { color: colors.text.tertiary, left: TREND_PAD_X + (m / 11) * innerW - 20 },
+                ]}
+              >
+                {MONTHS_SHORT[language][m]}
+              </Text>
+            ))}
+          </View>
+        </View>
+      ) : (
+        <Text style={[styles.emptyText, { color: colors.text.tertiary }]}>
+          {t('insight.noData')}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Month level — stats + category breakdown + 4 tappable week columns
 // ---------------------------------------------------------------------------
 
@@ -498,9 +672,10 @@ interface MonthLevelProps {
   mi: number;
   onBack: () => void;
   onSelectWeek: (wi: number) => void;
+  onSelectDay: (day: number, weekday: number) => void;
 }
 
-function MonthLevel({ year, mi, onBack, onSelectWeek }: MonthLevelProps) {
+function MonthLevel({ year, mi, onBack, onSelectWeek, onSelectDay }: MonthLevelProps) {
   const colors = useColors();
   const { t, language } = useTranslation();
   const detail = useMonthDetail(year, mi);
@@ -520,6 +695,8 @@ function MonthLevel({ year, mi, onBack, onSelectWeek }: MonthLevelProps) {
   // is the deficit color and less is the income color.
   const delta = detail ? computeMonthDelta(totals.expense, detail.prevExpense) : null;
   const prevLabel = MONTHS_SHORT[language][(mi === 1 ? 12 : mi - 1) - 1];
+  // Peak day/time habits — hidden until the month has any expense.
+  const peak = detail ? computePeakSpending(detail.peakCells) : null;
   const momColor =
     delta?.direction === 'up'
       ? DEFICIT_COLOR
@@ -562,10 +739,117 @@ function MonthLevel({ year, mi, onBack, onSelectWeek }: MonthLevelProps) {
               language={language}
               onSelectWeek={onSelectWeek}
             />
+
+            {peak && peak.weekday !== null ? (
+              <>
+                <SectionTitle title={t('insight.habits')} />
+                <PeakRow peak={peak} language={language} />
+              </>
+            ) : null}
+
+            {detail.largest ? (
+              <>
+                <SectionTitle title={t('insight.largest')} hint={t('insight.tapTransactions')} />
+                <LargestCard tx={detail.largest} onSelectDay={onSelectDay} />
+              </>
+            ) : null}
           </>
         )}
       </ScrollView>
     </View>
+  );
+}
+
+// Two flat stat cards: the weekday and the time-of-day bucket where this
+// month's spending concentrates, each with its summed amount.
+interface PeakRowProps {
+  peak: PeakSpending;
+  language: 'en' | 'vi';
+}
+
+function PeakRow({ peak, language }: PeakRowProps) {
+  const colors = useColors();
+  const { t } = useTranslation();
+  const { compact } = useFormatCurrency();
+
+  return (
+    <View style={styles.peakRow}>
+      <View
+        style={[styles.peakCard, { backgroundColor: colors.glass.base, borderColor: colors.glass.border }]}
+      >
+        <Text style={[styles.peakLabel, { color: colors.text.tertiary }]}>
+          {t('insight.peakDay').toUpperCase()}
+        </Text>
+        <Text style={[styles.peakValue, { color: colors.text.primary }]} numberOfLines={1}>
+          {DAY_NAMES_FULL[language][peak.weekday!]}
+        </Text>
+        <Text style={[styles.peakSub, { color: colors.text.tertiary }]}>
+          {compact(peak.weekdayTotal) ?? ''}
+        </Text>
+      </View>
+      {peak.bucket ? (
+        <View
+          style={[styles.peakCard, { backgroundColor: colors.glass.base, borderColor: colors.glass.border }]}
+        >
+          <Text style={[styles.peakLabel, { color: colors.text.tertiary }]}>
+            {t('insight.peakTime').toUpperCase()}
+          </Text>
+          <Text style={[styles.peakValue, { color: colors.text.primary }]} numberOfLines={1}>
+            {t(BUCKET_KEY[peak.bucket])}
+          </Text>
+          <Text style={[styles.peakSub, { color: colors.text.tertiary }]}>
+            {compact(peak.bucketTotal) ?? ''}
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+// The month's single biggest expense — tapping opens the day sheet for the day
+// it happened, same as tapping that day's bar on the week level.
+interface LargestCardProps {
+  tx: TransactionWithCategory;
+  onSelectDay: (day: number, weekday: number) => void;
+}
+
+function LargestCard({ tx, onSelectDay }: LargestCardProps) {
+  const colors = useColors();
+  const bubbleColors = useBubbleColors();
+  const { format } = useFormatCurrency();
+  const { language } = useTranslation();
+
+  const swatch = bubbleColors[tx.colorKey];
+  const date = new Date(tx.transactedAt);
+  const dateLabel = formatShortDate(date, language);
+  const sub = tx.note ? `${dateLabel}  ·  ${tx.note}` : dateLabel;
+
+  return (
+    <Pressable
+      onPress={() => onSelectDay(date.getDate(), date.getDay())}
+      style={({ pressed }) => [
+        styles.largestCard,
+        {
+          backgroundColor: colors.glass.base,
+          borderColor: colors.glass.border,
+          opacity: pressed ? 0.8 : 1,
+        },
+      ]}
+    >
+      <View style={[styles.dayRowIcon, { backgroundColor: swatch.bg, borderColor: swatch.border }]}>
+        <Text style={styles.dayRowEmoji}>{tx.emoji}</Text>
+      </View>
+      <View style={styles.dayRowInfo}>
+        <Text style={[styles.dayRowName, { color: colors.text.primary }]} numberOfLines={1}>
+          {tx.categoryName}
+        </Text>
+        <Text style={[styles.dayRowTime, { color: colors.text.tertiary }]} numberOfLines={1}>
+          {sub}
+        </Text>
+      </View>
+      <Text style={[styles.largestAmount, { color: colors.text.primary }]}>{format(tx.amount)}</Text>
+      <Feather name="chevron-right" size={16} color={colors.text.tertiary} />
+    </Pressable>
   );
 }
 
@@ -1285,6 +1569,82 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
     paddingVertical: 24,
+  },
+  // Trend chart (year level)
+  chipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingBottom: 12,
+  },
+  allChip: {
+    height: 32,
+    borderRadius: 99,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  allChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  catChip: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  catChipEmoji: {
+    fontSize: 15,
+  },
+  tickRow: {
+    height: 14,
+  },
+  tickLabel: {
+    position: 'absolute',
+    width: 40,
+    textAlign: 'center',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  // Habits (peak day / peak time) cards
+  peakRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  peakCard: {
+    flex: 1,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 12,
+  },
+  peakLabel: {
+    fontSize: 10,
+    letterSpacing: 1.3,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  peakValue: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  peakSub: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  // Biggest-expense card
+  largestCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 12,
+  },
+  largestAmount: {
+    fontSize: 15,
+    fontWeight: '700',
   },
   // Day sheet
   backdrop: {

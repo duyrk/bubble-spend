@@ -177,6 +177,15 @@ const en = {
   'insight.noTransactions': 'No transactions',
   'insight.transactions': 'Transactions',
   'insight.vsPrev': 'vs',
+  'insight.trend': 'Spending trend',
+  'insight.allCategories': 'All',
+  'insight.habits': 'Spending habits',
+  'insight.peakTime': 'Peak time',
+  'insight.largest': 'Biggest expense',
+  timeMorning: 'Morning',
+  timeAfternoon: 'Afternoon',
+  timeEvening: 'Evening',
+  timeNight: 'Night',
 } as const;
 
 export type TranslationKey = keyof typeof en;
@@ -323,6 +332,15 @@ const vi: Record<TranslationKey, string> = {
   'insight.noTransactions': 'Không có giao dịch',
   'insight.transactions': 'Giao dịch',
   'insight.vsPrev': 'so với',
+  'insight.trend': 'Xu hướng chi tiêu',
+  'insight.allCategories': 'Tất cả',
+  'insight.habits': 'Thói quen chi tiêu',
+  'insight.peakTime': 'Giờ cao điểm',
+  'insight.largest': 'Khoản chi lớn nhất',
+  timeMorning: 'Sáng',
+  timeAfternoon: 'Chiều',
+  timeEvening: 'Tối',
+  timeNight: 'Đêm',
 };
 
 export const TRANSLATIONS: Record<Language, Record<TranslationKey, string>> = { en, vi };
