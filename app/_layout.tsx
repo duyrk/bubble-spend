@@ -11,6 +11,7 @@ import { useRecurringStore } from '@/stores/useRecurringStore';
 import { useTransactionStore } from '@/stores/useTransactionStore';
 import { useCaptureStore } from '@/stores/useCaptureStore';
 import { useSettingsStore } from '@/stores/useSettingsStore';
+import { runAutoBackup } from '@/stores/runAutoBackup';
 import { useColors, useResolvedTheme } from '@/hooks/useTheme';
 import { configureNotificationHandler } from '@/lib/notifications';
 import { fireDueRecurringTemplates } from '@/lib/recurringIO';
@@ -64,7 +65,12 @@ export default function RootLayout() {
   // Declared after the effect above so initDb() has run first.
   useEffect(() => {
     if (!settingsHydrated || !NotificationCapture.isSupported) return;
-    const runCapture = () => useCaptureStore.getState().run();
+    // Captures first so today's auto-logged spends make it into the backup;
+    // the backup itself is a no-op unless a folder is set and one is due today.
+    const runCapture = () => {
+      useCaptureStore.getState().run();
+      void runAutoBackup();
+    };
     runCapture();
     const appSub = AppState.addEventListener('change', (state) => {
       if (state === 'active') runCapture();

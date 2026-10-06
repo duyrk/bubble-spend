@@ -14,7 +14,9 @@ import { useSettingsStore } from '@/stores/useSettingsStore';
 import { useCategoryStore } from '@/stores/useCategoryStore';
 import { useRecurringStore } from '@/stores/useRecurringStore';
 import { useTransactionStore } from '@/stores/useTransactionStore';
-import { exportData, pickBackup, applyBackup } from '@/lib/backupIO';
+import { exportData, pickBackup, applyBackup, pickAutoBackupFolder } from '@/lib/backupIO';
+import { folderLabelFromSafUri } from '@/lib/autoBackup';
+import { runAutoBackup } from '@/stores/runAutoBackup';
 import { useColors } from '@/hooks/useTheme';
 import { useTranslation } from '@/hooks/useTranslation';
 import { LANGUAGES } from '@/lib/i18n';
@@ -104,8 +106,8 @@ export function SettingsScreen() {
 
   // After a restore, re-read categories + the active period's transactions from
   // SQLite and re-scale the bubbles so Home/History reflect the imported data.
-  // Recurring templates are wiped by the import (backups don't carry them), so
-  // the in-memory list must be re-read too.
+  // Recurring templates are replaced by the import (or wiped, for a v1 backup
+  // that predates them), so the in-memory list must be re-read too.
   const reloadAfterImport = useCallback(() => {
     useCategoryStore.getState().load();
     useRecurringStore.getState().load();
@@ -116,7 +118,7 @@ export function SettingsScreen() {
 
   const handleExport = useCallback(async () => {
     try {
-      const result = await exportData();
+      const result = await exportData(useSettingsStore.getState().ownAccounts);
       if (result.status === 'empty') {
         Alert.alert(t('exportData'), t('nothingToExport'));
       }
@@ -143,6 +145,7 @@ export function SettingsScreen() {
         onPress: () => {
           try {
             applyBackup(payload);
+            if (payload.ownAccounts) useSettingsStore.getState().setOwnAccounts(payload.ownAccounts);
             reloadAfterImport();
             Alert.alert(t('importData'), t('importSuccess'));
           } catch {
@@ -152,6 +155,53 @@ export function SettingsScreen() {
       },
     ]);
   }, [t, reloadAfterImport]);
+
+  // --- Auto backup (Android) ---
+  const autoBackupDirUri = useSettingsStore((s) => s.autoBackupDirUri);
+  const lastAutoBackupAt = useSettingsStore((s) => s.lastAutoBackupAt);
+  const autoBackupFailed = useSettingsStore((s) => s.autoBackupFailed);
+  const setAutoBackupDir = useSettingsStore((s) => s.setAutoBackupDir);
+
+  const backupNow = useCallback(async () => {
+    const ok = await runAutoBackup({ force: true });
+    Alert.alert(t('autoBackup'), ok ? t('autoBackupDone') : t('autoBackupFailedDesc'));
+  }, [t]);
+
+  const chooseBackupFolder = useCallback(async () => {
+    const uri = await pickAutoBackupFolder().catch(() => null);
+    if (!uri) return;
+    setAutoBackupDir(uri);
+    await backupNow();
+  }, [setAutoBackupDir, backupNow]);
+
+  const handleAutoBackupPress = useCallback(() => {
+    if (!autoBackupDirUri) {
+      // Explain before the system picker opens — it gives no context itself.
+      Alert.alert(t('autoBackupPickTitle'), t('autoBackupPickBody'), [
+        { text: t('cancel'), style: 'cancel' },
+        { text: t('continueLabel'), onPress: chooseBackupFolder },
+      ]);
+      return;
+    }
+    Alert.alert(t('autoBackup'), folderLabelFromSafUri(autoBackupDirUri), [
+      { text: t('backupNow'), onPress: backupNow },
+      { text: t('changeFolder'), onPress: chooseBackupFolder },
+      { text: t('turnOff'), style: 'destructive', onPress: () => setAutoBackupDir(null) },
+    ], { cancelable: true });
+  }, [autoBackupDirUri, t, chooseBackupFolder, backupNow, setAutoBackupDir]);
+
+  const formatStamp = (ms: number) => {
+    const d = new Date(ms);
+    const p = (n: number) => n.toString().padStart(2, '0');
+    return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  };
+  const autoBackupDescription = !autoBackupDirUri
+    ? t('autoBackupDescOff')
+    : autoBackupFailed
+      ? t('autoBackupFailedDesc')
+      : lastAutoBackupAt
+        ? `${t('autoBackupLast')}: ${formatStamp(lastAutoBackupAt)}`
+        : folderLabelFromSafUri(autoBackupDirUri);
 
   const formatTime = (h: number, m: number) =>
     `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
@@ -244,6 +294,14 @@ export function SettingsScreen() {
         ) : null}
 
         <SettingsGroup title={t('data')}>
+          {Platform.OS === 'android' ? (
+            <SettingsRow
+              label={t('autoBackup')}
+              description={autoBackupDescription}
+              value={autoBackupDirUri ? folderLabelFromSafUri(autoBackupDirUri).split('/').pop() : t('autoBackupOff')}
+              onPress={handleAutoBackupPress}
+            />
+          ) : null}
           <SettingsRow
             label={t('exportData')}
             description={t('exportDataDesc')}

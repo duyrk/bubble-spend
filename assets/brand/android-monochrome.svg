@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs><mask id="cut" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+    <rect width="1024" height="1024" fill="#fff"/>
+    <circle cx="817" cy="210" r="184" fill="#000"/>
+    <path d="M239.0 512.0 A273 273 0 0 1 411.1 258.3" stroke="#000" stroke-width="20" stroke-linecap="round" fill="none"/>
+  </mask></defs>
+  <g transform="translate(512 512) scale(0.62) translate(-512 -512)" fill="#FFFFFF">
+    <circle cx="512" cy="512" r="348" mask="url(#cut)"/>
+    <circle cx="817" cy="210" r="59"/>
+  </g>
+</svg>
