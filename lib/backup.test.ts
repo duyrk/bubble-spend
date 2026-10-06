@@ -65,3 +65,47 @@ describe('parseBackup validation', () => {
     expect(() => parseBackup(bad)).toThrow(/Invalid backup/);
   });
 });
+
+describe('backup v2 extras', () => {
+  const extras = {
+    recurringTemplates: [
+      {
+        id: 'r1',
+        categoryId: 'c1',
+        amount: 100000,
+        frequency: 'monthly' as const,
+        dayOfMonth: 5,
+        lastFiredDate: '2026-10-05',
+        active: true,
+        createdAt: 1,
+      },
+    ],
+    merchantRules: [{ key: 'HIGHLANDS COFFEE', categoryId: 'c1', hits: 3 }],
+    ownAccounts: ['VO KHANH DUY'],
+  };
+
+  it('round-trips recurring templates, merchant rules and own accounts', () => {
+    const parsed = parseBackup(serializeBackup(categories, transactions, 1, extras));
+    expect(parsed.recurringTemplates).toEqual(extras.recurringTemplates);
+    expect(parsed.merchantRules).toEqual(extras.merchantRules);
+    expect(parsed.ownAccounts).toEqual(extras.ownAccounts);
+  });
+
+  it('leaves extras undefined for a v1 file', () => {
+    const v1 = JSON.stringify({ app: BACKUP_APP_ID, version: 1, exportedAt: 1, categories: [], transactions: [] });
+    const parsed = parseBackup(v1);
+    expect(parsed.recurringTemplates).toBeUndefined();
+    expect(parsed.merchantRules).toBeUndefined();
+    expect(parsed.ownAccounts).toBeUndefined();
+  });
+
+  it('rejects a recurring template with an unknown frequency', () => {
+    const bad = JSON.stringify({
+      app: BACKUP_APP_ID,
+      categories: [],
+      transactions: [],
+      recurringTemplates: [{ ...extras.recurringTemplates[0], frequency: 'hourly' }],
+    });
+    expect(() => parseBackup(bad)).toThrow(/frequency/);
+  });
+});

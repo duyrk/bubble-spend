@@ -312,17 +312,28 @@ export function deleteTransactionsByCategory(categoryId: string): void {
 // bulk insert in a single transaction so a failure can't leave a half-imported
 // database. The sync queue is cleared too — a restore is a fresh local baseline,
 // not a set of pending edits to flush.
-export function replaceAllData(categories: Category[], transactions: Transaction[]): void {
+export function replaceAllData(
+  categories: Category[],
+  transactions: Transaction[],
+  extras: { recurringTemplates?: RecurringTemplate[]; merchantRules?: MerchantRule[] } = {},
+): void {
   const db = getDb();
   db.withTransactionSync(() => {
     db.runSync('DELETE FROM sync_queue');
     db.runSync('DELETE FROM transactions');
     db.runSync('DELETE FROM categories');
-    // Backups don't carry recurring templates, and the restored categories have
-    // different ids — surviving templates would dangle and auto-log orphans.
+    // Templates always go: v2 backups restore their own, and v1 backups predate
+    // them — surviving templates could point at categories that no longer exist.
     db.runSync('DELETE FROM recurring_templates');
     for (const cat of categories) insertCategory(cat);
     for (const tx of transactions) insertTransaction(tx);
+    for (const t of extras.recurringTemplates ?? []) insertRecurringTemplate(t);
+    // Rules are only replaced when the backup carries them; a v1 restore keeps
+    // the learned rules (ones for missing bubbles are ignored at lookup time).
+    if (extras.merchantRules) {
+      db.runSync('DELETE FROM merchant_rules');
+      for (const r of extras.merchantRules) insertMerchantRule(r);
+    }
   });
 }
 
@@ -916,6 +927,14 @@ export function upsertMerchantRule(key: string, categoryId: string): void {
        category_id = excluded.category_id,
        updated_at = excluded.updated_at`,
     [key, categoryId, Date.now()],
+  );
+}
+
+export function insertMerchantRule(r: MerchantRule): void {
+  const db = getDb();
+  db.runSync(
+    'INSERT OR REPLACE INTO merchant_rules (key, category_id, hits, updated_at) VALUES (?, ?, ?, ?)',
+    [r.key, r.categoryId, r.hits, Date.now()],
   );
 }
 

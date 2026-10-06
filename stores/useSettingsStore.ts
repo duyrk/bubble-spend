@@ -21,6 +21,12 @@ type SettingsState = {
   // Notification auto-capture: the user's own account numbers / holder names —
   // money to or from these is a transfer to self, never spending.
   ownAccounts: string[];
+  // Daily auto-backup target (Android SAF tree URI), null = off.
+  autoBackupDirUri: string | null;
+  lastAutoBackupAt: number | null;
+  // True when the last attempt failed (folder deleted / access revoked) —
+  // Settings then asks for a new folder.
+  autoBackupFailed: boolean;
   // Transient (never persisted): true once AsyncStorage has rehydrated. Gates
   // first-paint logic like the onboarding overlay so it doesn't act on defaults.
   _hasHydrated: boolean;
@@ -32,6 +38,8 @@ type SettingsState = {
   setReminderTime: (hour: number, minute: number) => void;
   completeOnboarding: () => void;
   setOwnAccounts: (accounts: string[]) => void;
+  setAutoBackupDir: (uri: string | null) => void;
+  recordAutoBackup: (ok: boolean) => void;
   setHasHydrated: (hydrated: boolean) => void;
 };
 
@@ -74,6 +82,9 @@ export const useSettingsStore = create<SettingsState>()(
       reminderMinute: 0,
       hasCompletedOnboarding: false,
       ownAccounts: [],
+      autoBackupDirUri: null,
+      lastAutoBackupAt: null,
+      autoBackupFailed: false,
       _hasHydrated: false,
 
       setTheme: (theme) => set({ theme }),
@@ -83,6 +94,9 @@ export const useSettingsStore = create<SettingsState>()(
       setReminderTime: (reminderHour, reminderMinute) => set({ reminderHour, reminderMinute }),
       completeOnboarding: () => set({ hasCompletedOnboarding: true }),
       setOwnAccounts: (ownAccounts) => set({ ownAccounts }),
+      setAutoBackupDir: (autoBackupDirUri) => set({ autoBackupDirUri, autoBackupFailed: false }),
+      recordAutoBackup: (ok) =>
+        set(ok ? { lastAutoBackupAt: Date.now(), autoBackupFailed: false } : { autoBackupFailed: true }),
       setHasHydrated: (hydrated) => set({ _hasHydrated: hydrated }),
     }),
     {
@@ -98,6 +112,9 @@ export const useSettingsStore = create<SettingsState>()(
         reminderMinute: s.reminderMinute,
         hasCompletedOnboarding: s.hasCompletedOnboarding,
         ownAccounts: s.ownAccounts,
+        autoBackupDirUri: s.autoBackupDirUri,
+        lastAutoBackupAt: s.lastAutoBackupAt,
+        autoBackupFailed: s.autoBackupFailed,
       }),
       // Flip the gate once AsyncStorage has loaded so the onboarding overlay
       // doesn't flash for returning users before their flag is read back.

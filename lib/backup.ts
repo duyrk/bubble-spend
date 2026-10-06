@@ -2,12 +2,23 @@
 // tested and reused. The IO orchestration (file write, share, document pick,
 // DB replace) lives in lib/backupIO.ts.
 
-import type { BubbleColorKey, Category, Transaction } from '@/types';
+import type { MerchantRule } from './autoCategorize';
+import type { BubbleColorKey, Category, RecurringFrequency, RecurringTemplate, Transaction } from '@/types';
 
 export const BACKUP_APP_ID = 'bubble-spend';
-export const BACKUP_VERSION = 1;
+// v2 adds the optional extras below. v1 files (no extras) still import.
+export const BACKUP_VERSION = 2;
 
-export type BackupPayload = {
+// Everything beyond categories + transactions. Each field is optional on read:
+// absent means "the file predates it", and the importer keeps today's behavior
+// for that data instead of wiping it to empty.
+export type BackupExtras = {
+  recurringTemplates?: RecurringTemplate[];
+  merchantRules?: MerchantRule[];
+  ownAccounts?: string[];
+};
+
+export type BackupPayload = BackupExtras & {
   app: typeof BACKUP_APP_ID;
   version: number;
   exportedAt: number; // unix ms
@@ -19,6 +30,7 @@ export function serializeBackup(
   categories: Category[],
   transactions: Transaction[],
   exportedAt: number = Date.now(),
+  extras: BackupExtras = {},
 ): string {
   const payload: BackupPayload = {
     app: BACKUP_APP_ID,
@@ -26,6 +38,7 @@ export function serializeBackup(
     exportedAt,
     categories,
     transactions,
+    ...extras,
   };
   return JSON.stringify(payload, null, 2);
 }
@@ -59,6 +72,13 @@ export function parseBackup(json: string): BackupPayload {
     exportedAt: typeof obj.exportedAt === 'number' ? obj.exportedAt : Date.now(),
     categories: obj.categories.map(parseCategory),
     transactions: obj.transactions.map(parseTransaction),
+    recurringTemplates: Array.isArray(obj.recurringTemplates)
+      ? obj.recurringTemplates.map(parseRecurringTemplate)
+      : undefined,
+    merchantRules: Array.isArray(obj.merchantRules) ? obj.merchantRules.map(parseMerchantRule) : undefined,
+    ownAccounts: Array.isArray(obj.ownAccounts)
+      ? obj.ownAccounts.map((a, i) => asString(a, `ownAccounts[${i}]`))
+      : undefined,
   };
 }
 
@@ -106,5 +126,34 @@ function parseTransaction(v: unknown): Transaction {
     transactedAt: asNumber(o.transactedAt, 'transaction.transactedAt'),
     note: typeof o.note === 'string' ? o.note : undefined,
     synced: o.synced === true,
+  };
+}
+
+const FREQUENCIES: RecurringFrequency[] = ['daily', 'weekly', 'monthly'];
+
+function parseRecurringTemplate(v: unknown): RecurringTemplate {
+  const o = asObject(v, 'recurring template');
+  const frequency = asString(o.frequency, 'recurring.frequency') as RecurringFrequency;
+  if (!FREQUENCIES.includes(frequency)) throw new Error('Invalid backup: recurring.frequency is unknown');
+  return {
+    id: asString(o.id, 'recurring.id'),
+    categoryId: asString(o.categoryId, 'recurring.categoryId'),
+    amount: asNumber(o.amount, 'recurring.amount'),
+    note: typeof o.note === 'string' ? o.note : undefined,
+    frequency,
+    dayOfWeek: typeof o.dayOfWeek === 'number' ? o.dayOfWeek : undefined,
+    dayOfMonth: typeof o.dayOfMonth === 'number' ? o.dayOfMonth : undefined,
+    lastFiredDate: typeof o.lastFiredDate === 'string' ? o.lastFiredDate : undefined,
+    active: o.active !== false,
+    createdAt: asNumber(o.createdAt, 'recurring.createdAt'),
+  };
+}
+
+function parseMerchantRule(v: unknown): MerchantRule {
+  const o = asObject(v, 'merchant rule');
+  return {
+    key: asString(o.key, 'rule.key'),
+    categoryId: asString(o.categoryId, 'rule.categoryId'),
+    hits: typeof o.hits === 'number' ? o.hits : 1,
   };
 }
