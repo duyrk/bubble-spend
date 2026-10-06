@@ -13,6 +13,9 @@ import { stepPeriod } from '@/lib/period';
 import { GESTURE } from '@/constants/config';
 import { useTransactionStore } from '@/stores/useTransactionStore';
 import { useCategoryStore } from '@/stores/useCategoryStore';
+import { useCaptureStore } from '@/stores/useCaptureStore';
+import { useFormatCurrency } from '@/hooks/useFormatCurrency';
+import { CaptureInboxSheet } from '@/features/capture/CaptureInboxSheet';
 import { BubbleField } from '@/features/bubble/BubbleField';
 import { AmbientBloom } from '@/components/ui/AmbientBloom';
 import { UndoToast } from '@/components/ui/UndoToast';
@@ -50,6 +53,19 @@ export function HomeScreen() {
 
   const { particles, trigger: triggerFireworks } = useFireworks();
   const [pendingUndoId, setPendingUndoId] = useState<string | null>(null);
+
+  // Notification auto-capture: the latest auto-log batch (undo toast) and the
+  // uncategorized inbox. Both are filled by useCaptureStore.run() in the root layout.
+  const { format } = useFormatCurrency();
+  const autoRun = useCaptureStore((s) => s.lastRun);
+  const pendingCaptureCount = useCaptureStore((s) => s.pending.length);
+  const undoAutoRun = useCaptureStore((s) => s.undoLastRun);
+  const clearAutoRun = useCaptureStore((s) => s.clearLastRun);
+  const [inboxVisible, setInboxVisible] = useState(false);
+  const closeInbox = useCallback(() => setInboxVisible(false), []);
+  const autoRunLabel = autoRun
+    ? `${t('autoLogged')} ${autoRun.count}${autoRun.expenseTotal > 0 ? ` · ${format(autoRun.expenseTotal)}` : ''}`
+    : undefined;
 
   useEffect(() => {
     if (loaded) {
@@ -167,6 +183,21 @@ export function HomeScreen() {
             <SpendingPace monthToDate={expenseTotal} totalBudget={monthlyBudgetTotal} />
           ) : null}
 
+          {pendingCaptureCount > 0 && !dragMode ? (
+            <Pressable
+              onPress={() => setInboxVisible(true)}
+              style={({ pressed }) => [
+                styles.capturePill,
+                { backgroundColor: colors.glass.highlight, borderColor: colors.glass.border },
+                pressed && { opacity: 0.7 },
+              ]}
+            >
+              <Text style={[styles.capturePillText, { color: colors.text.primary }]}>
+                🔔 {pendingCaptureCount} {t('uncategorized')}
+              </Text>
+            </Pressable>
+          ) : null}
+
           <BubbleField swipeGesture={swipeGesture} />
         </View>
       </GestureDetector>
@@ -192,6 +223,14 @@ export function HomeScreen() {
       <FireworksOverlay particles={particles} />
 
       <UndoToast id={pendingUndoId} onUndo={handleUndo} onDismiss={dismissUndo} />
+      {/* Same slot as the manual toast — a fresh manual log takes precedence. */}
+      <UndoToast
+        id={pendingUndoId ? null : (autoRun?.id ?? null)}
+        label={autoRunLabel}
+        onUndo={undoAutoRun}
+        onDismiss={clearAutoRun}
+      />
+      <CaptureInboxSheet visible={inboxVisible} onClose={closeInbox} />
 
       <OnboardingOverlay />
     </View>
@@ -215,6 +254,20 @@ const styles = StyleSheet.create({
   emptyHintText: {
     fontSize: 12,
     letterSpacing: 0.4,
+  },
+  capturePill: {
+    alignSelf: 'center',
+    marginTop: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 99,
+    borderWidth: 0.5,
+    zIndex: 3,
+  },
+  capturePillText: {
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
   doneBtn: {
     position: 'absolute',

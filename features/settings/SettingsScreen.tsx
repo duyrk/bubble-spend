@@ -1,13 +1,15 @@
 // Settings screen — theme, language, currency, notifications, version
 
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Platform, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Alert, AppState, Platform, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Application from 'expo-application';
 import { SettingsGroup } from './SettingsGroup';
 import { SettingsRow } from './SettingsRow';
 import { OptionPickerModal } from './OptionPickerModal';
 import { RecurringListSheet } from './RecurringListSheet';
+import { CaptureDebugSheet } from './CaptureDebugSheet';
+import { OwnAccountsSheet } from './OwnAccountsSheet';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { useCategoryStore } from '@/stores/useCategoryStore';
 import { useRecurringStore } from '@/stores/useRecurringStore';
@@ -25,6 +27,7 @@ import {
   cancelDailyReminder,
 } from '@/lib/notifications';
 import type { ThemeMode } from '@/stores/useSettingsStore';
+import * as NotificationCapture from '@/modules/notification-capture';
 
 const APP_VERSION = Application.nativeApplicationVersion ?? '1.0.0';
 const BUILD_VERSION = Application.nativeBuildVersion ?? '1';
@@ -60,6 +63,20 @@ export function SettingsScreen() {
   const [recurringListVisible, setRecurringListVisible] = useState(false);
 
   const recurringCount = useRecurringStore((s) => s.templates.length);
+
+  // Android notification-listener access lives in system settings, so re-check
+  // whenever the user returns to the app (they may have just toggled it).
+  const [captureAccess, setCaptureAccess] = useState(NotificationCapture.isAccessGranted);
+  const [captureDebugVisible, setCaptureDebugVisible] = useState(false);
+  const [ownAccountsVisible, setOwnAccountsVisible] = useState(false);
+  const ownAccountCount = useSettingsStore((s) => s.ownAccounts.length);
+  useEffect(() => {
+    if (!NotificationCapture.isSupported) return;
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') setCaptureAccess(NotificationCapture.isAccessGranted());
+    });
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     if (notificationsEnabled) {
@@ -204,6 +221,28 @@ export function SettingsScreen() {
           />
         </SettingsGroup>
 
+        {NotificationCapture.isSupported ? (
+          <SettingsGroup title={t('autoCapture')}>
+            <SettingsRow
+              label={t('notificationAccess')}
+              description={t('notificationAccessDesc')}
+              value={captureAccess ? t('accessOn') : t('accessOff')}
+              onPress={NotificationCapture.openAccessSettings}
+            />
+            <SettingsRow
+              label={t('myAccounts')}
+              description={t('myAccountsDesc')}
+              value={ownAccountCount > 0 ? String(ownAccountCount) : t('none')}
+              onPress={() => setOwnAccountsVisible(true)}
+            />
+            <SettingsRow
+              label={t('capturedNotifications')}
+              onPress={() => setCaptureDebugVisible(true)}
+              isLast
+            />
+          </SettingsGroup>
+        ) : null}
+
         <SettingsGroup title={t('data')}>
           <SettingsRow
             label={t('exportData')}
@@ -270,6 +309,19 @@ export function SettingsScreen() {
         visible={recurringListVisible}
         onClose={() => setRecurringListVisible(false)}
       />
+
+      {NotificationCapture.isSupported ? (
+        <>
+          <CaptureDebugSheet
+            visible={captureDebugVisible}
+            onClose={() => setCaptureDebugVisible(false)}
+          />
+          <OwnAccountsSheet
+            visible={ownAccountsVisible}
+            onClose={() => setOwnAccountsVisible(false)}
+          />
+        </>
+      ) : null}
 
       <OptionPickerModal
         visible={picker === 'reminderTime'}

@@ -14,6 +14,7 @@ import { CategoryBreakdown } from './CategoryBreakdown';
 import { NumpadModal } from '@/features/numpad/NumpadModal';
 import { getPeriodRange, useTransactionStore } from '@/stores/useTransactionStore';
 import * as db from '@/lib/db';
+import { learnFromEdit } from '@/lib/captureIO';
 import type { Period, Transaction, TransactionEdit } from '@/types';
 import type { TranslationKey } from '@/lib/i18n';
 
@@ -73,9 +74,13 @@ export function HistoryScreen() {
   const handleEditConfirm = useCallback(
     (id: string, fields: TransactionEdit) => {
       useTransactionStore.getState().updateTransaction(id, fields);
+      // Re-filing an auto-captured expense teaches its merchant → bubble rule.
+      if (editTarget?.id === id && fields.categoryId !== editTarget.categoryId) {
+        learnFromEdit(id, fields.categoryId);
+      }
       loadTransactions();
     },
-    [loadTransactions],
+    [loadTransactions, editTarget],
   );
 
   const editCategory = editTarget
