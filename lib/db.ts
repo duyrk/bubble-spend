@@ -16,7 +16,11 @@ import type {
   BubbleColorKey,
   RecurringFrequency,
   RecurringTemplate,
+  CaptureStatus,
+  CaptureVerdict,
+  StoredCapture,
 } from '@/types';
+import type { MerchantRule } from './autoCategorize';
 
 let _db: SQLite.SQLiteDatabase | null = null;
 
@@ -94,6 +98,35 @@ export function initDb(): void {
       last_fired_date TEXT,
       active INTEGER NOT NULL DEFAULT 1,
       created_at INTEGER NOT NULL
+    );
+  `);
+
+  // Notification auto-capture — one row per processed notification (the dedup
+  // memory + audit trail), and the learned merchant → bubble rules.
+  db.execSync(`
+    CREATE TABLE IF NOT EXISTS captures (
+      id TEXT PRIMARY KEY,
+      package_name TEXT NOT NULL,
+      source TEXT NOT NULL,
+      amount REAL NOT NULL,
+      direction TEXT NOT NULL,
+      description TEXT NOT NULL,
+      text TEXT NOT NULL,
+      occurred_at INTEGER NOT NULL,
+      balance REAL,
+      confidence TEXT NOT NULL,
+      verdict TEXT,
+      status TEXT NOT NULL,
+      transaction_id TEXT,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_captures_occurred ON captures (occurred_at);
+    CREATE INDEX IF NOT EXISTS idx_captures_tx ON captures (transaction_id);
+    CREATE TABLE IF NOT EXISTS merchant_rules (
+      key TEXT PRIMARY KEY,
+      category_id TEXT NOT NULL,
+      hits INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL
     );
   `);
 }
@@ -704,4 +737,194 @@ export function deleteSyncItemsForTransaction(txId: string): void {
       // malformed payload — leave it for the sync layer to deal with
     }
   }
+}
+
+// --- Notification auto-capture ---
+
+type CaptureRow = {
+  id: string;
+  package_name: string;
+  source: string;
+  amount: number;
+  direction: string;
+  description: string;
+  text: string;
+  occurred_at: number;
+  balance: number | null;
+  confidence: string;
+  verdict: string | null;
+  status: string;
+  transaction_id: string | null;
+  created_at: number;
+};
+
+function toStoredCapture(r: CaptureRow): StoredCapture {
+  let verdict: CaptureVerdict | undefined;
+  try {
+    verdict = r.verdict ? (JSON.parse(r.verdict) as CaptureVerdict) : undefined;
+  } catch {
+    verdict = undefined;
+  }
+  return {
+    captureId: r.id,
+    packageName: r.package_name,
+    source: r.source as StoredCapture['source'],
+    amount: r.amount,
+    direction: r.direction as StoredCapture['direction'],
+    description: r.description,
+    text: r.text,
+    occurredAt: r.occurred_at,
+    balance: r.balance ?? undefined,
+    confidence: r.confidence as StoredCapture['confidence'],
+    verdict,
+    status: r.status as CaptureStatus,
+    transactionId: r.transaction_id ?? undefined,
+    createdAt: r.created_at,
+  };
+}
+
+export function insertCapture(c: StoredCapture): void {
+  const db = getDb();
+  db.runSync(
+    `INSERT OR IGNORE INTO captures
+       (id, package_name, source, amount, direction, description, text, occurred_at,
+        balance, confidence, verdict, status, transaction_id, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      c.captureId,
+      c.packageName,
+      c.source,
+      c.amount,
+      c.direction,
+      c.description,
+      c.text,
+      c.occurredAt,
+      c.balance ?? null,
+      c.confidence,
+      c.verdict ? JSON.stringify(c.verdict) : null,
+      c.status,
+      c.transactionId ?? null,
+      c.createdAt,
+    ],
+  );
+}
+
+export function updateCaptureStatus(id: string, status: CaptureStatus, transactionId?: string | null): void {
+  const db = getDb();
+  db.runSync('UPDATE captures SET status = ?, transaction_id = ? WHERE id = ?', [
+    status,
+    transactionId ?? null,
+    id,
+  ]);
+}
+
+// Which of `ids` are already stored — the native inbox may hand the same
+// notification over twice (e.g. a crash between processing and clearing).
+export function getExistingCaptureIds(ids: string[]): Set<string> {
+  if (ids.length === 0) return new Set();
+  const db = getDb();
+  const rows = db.getAllSync<{ id: string }>(
+    `SELECT id FROM captures WHERE id IN (${ids.map(() => '?').join(',')})`,
+    ids,
+  );
+  return new Set(rows.map((r) => r.id));
+}
+
+export function getCapture(id: string): StoredCapture | null {
+  const db = getDb();
+  const row = db.getFirstSync<CaptureRow>('SELECT * FROM captures WHERE id = ?', [id]);
+  return row ? toStoredCapture(row) : null;
+}
+
+export function getCaptureByTransaction(txId: string): StoredCapture | null {
+  const db = getDb();
+  const row = db.getFirstSync<CaptureRow>('SELECT * FROM captures WHERE transaction_id = ?', [txId]);
+  return row ? toStoredCapture(row) : null;
+}
+
+// Parsed captures in [startMs, endMs) — the classifier's pairing/dedup history.
+export function getCapturesBetween(startMs: number, endMs: number): StoredCapture[] {
+  const db = getDb();
+  const rows = db.getAllSync<CaptureRow>(
+    "SELECT * FROM captures WHERE status != 'unparsed' AND occurred_at >= ? AND occurred_at < ? ORDER BY occurred_at ASC",
+    [startMs, endMs],
+  );
+  return rows.map(toStoredCapture);
+}
+
+export function getPendingCaptures(): StoredCapture[] {
+  const db = getDb();
+  const rows = db.getAllSync<CaptureRow>(
+    "SELECT * FROM captures WHERE status = 'pending' ORDER BY occurred_at DESC",
+  );
+  return rows.map(toStoredCapture);
+}
+
+// Newest first, for the debug inspector.
+export function getRecentCaptures(limit = 100): StoredCapture[] {
+  const db = getDb();
+  const rows = db.getAllSync<CaptureRow>('SELECT * FROM captures ORDER BY created_at DESC LIMIT ?', [limit]);
+  return rows.map(toStoredCapture);
+}
+
+// Drop old non-transaction rows so debug mode can't grow the table forever.
+// Logged/pending rows are kept (they back undo, learning, and the inbox).
+export function pruneCaptures(olderThanMs: number): void {
+  const db = getDb();
+  db.runSync("DELETE FROM captures WHERE status IN ('ignored', 'unparsed') AND created_at < ?", [olderThanMs]);
+}
+
+// Hand-entered (and recurring) transactions in a window — every transaction not
+// produced by a capture. The classifier matches these to avoid double-logging
+// a spend the user already typed in.
+export function getUncapturedTransactionsBetween(
+  startMs: number,
+  endMs: number,
+): { id: string; amount: number; type: TransactionType; transactedAt: number }[] {
+  const db = getDb();
+  const rows = db.getAllSync<{ id: string; amount: number; type: string | null; transacted_at: number }>(
+    `SELECT t.id, t.amount, t.type, t.transacted_at
+       FROM transactions t
+      WHERE t.transacted_at >= ? AND t.transacted_at < ?
+        AND NOT EXISTS (SELECT 1 FROM captures c WHERE c.transaction_id = t.id)`,
+    [startMs, endMs],
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    amount: r.amount,
+    type: (r.type === 'income' ? 'income' : 'expense') as TransactionType,
+    transactedAt: r.transacted_at,
+  }));
+}
+
+export function getMerchantRules(): MerchantRule[] {
+  const db = getDb();
+  const rows = db.getAllSync<{ key: string; category_id: string; hits: number }>(
+    'SELECT key, category_id, hits FROM merchant_rules ORDER BY hits DESC',
+  );
+  return rows.map((r) => ({ key: r.key, categoryId: r.category_id, hits: r.hits }));
+}
+
+// Learn (or re-point) a rule. Re-filing a merchant to another bubble moves the
+// rule and resets its hit count.
+export function upsertMerchantRule(key: string, categoryId: string): void {
+  const db = getDb();
+  db.runSync(
+    `INSERT INTO merchant_rules (key, category_id, hits, updated_at) VALUES (?, ?, 1, ?)
+     ON CONFLICT(key) DO UPDATE SET
+       hits = CASE WHEN category_id = excluded.category_id THEN hits + 1 ELSE 1 END,
+       category_id = excluded.category_id,
+       updated_at = excluded.updated_at`,
+    [key, categoryId, Date.now()],
+  );
+}
+
+export function bumpMerchantRule(key: string): void {
+  const db = getDb();
+  db.runSync('UPDATE merchant_rules SET hits = hits + 1, updated_at = ? WHERE key = ?', [Date.now(), key]);
+}
+
+export function deleteMerchantRule(key: string): void {
+  const db = getDb();
+  db.runSync('DELETE FROM merchant_rules WHERE key = ?', [key]);
 }

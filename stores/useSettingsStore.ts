@@ -18,6 +18,9 @@ type SettingsState = {
   reminderHour: number; // 0-23
   reminderMinute: number; // 0-59
   hasCompletedOnboarding: boolean;
+  // Notification auto-capture: the user's own account numbers / holder names —
+  // money to or from these is a transfer to self, never spending.
+  ownAccounts: string[];
   // Transient (never persisted): true once AsyncStorage has rehydrated. Gates
   // first-paint logic like the onboarding overlay so it doesn't act on defaults.
   _hasHydrated: boolean;
@@ -28,6 +31,7 @@ type SettingsState = {
   setNotificationsEnabled: (enabled: boolean) => void;
   setReminderTime: (hour: number, minute: number) => void;
   completeOnboarding: () => void;
+  setOwnAccounts: (accounts: string[]) => void;
   setHasHydrated: (hydrated: boolean) => void;
 };
 
@@ -69,6 +73,7 @@ export const useSettingsStore = create<SettingsState>()(
       reminderHour: 21,
       reminderMinute: 0,
       hasCompletedOnboarding: false,
+      ownAccounts: [],
       _hasHydrated: false,
 
       setTheme: (theme) => set({ theme }),
@@ -77,6 +82,7 @@ export const useSettingsStore = create<SettingsState>()(
       setNotificationsEnabled: (notificationsEnabled) => set({ notificationsEnabled }),
       setReminderTime: (reminderHour, reminderMinute) => set({ reminderHour, reminderMinute }),
       completeOnboarding: () => set({ hasCompletedOnboarding: true }),
+      setOwnAccounts: (ownAccounts) => set({ ownAccounts }),
       setHasHydrated: (hydrated) => set({ _hasHydrated: hydrated }),
     }),
     {
@@ -91,6 +97,7 @@ export const useSettingsStore = create<SettingsState>()(
         reminderHour: s.reminderHour,
         reminderMinute: s.reminderMinute,
         hasCompletedOnboarding: s.hasCompletedOnboarding,
+        ownAccounts: s.ownAccounts,
       }),
       // Flip the gate once AsyncStorage has loaded so the onboarding overlay
       // doesn't flash for returning users before their flag is read back.

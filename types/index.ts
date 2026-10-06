@@ -82,6 +82,56 @@ export type RecurringTemplate = {
   createdAt: number;
 };
 
+// --- Notification auto-capture (Android) ---
+// Raw notification as queued by the native listener (modules/notification-capture),
+// parsed by lib/notificationParser.ts and classified by lib/captureClassify.ts.
+
+export type RawCapture = {
+  id: string; // `${sbn.key}|${postTime}` — stable per posted notification
+  packageName: string;
+  title: string;
+  text: string;
+  bigText: string;
+  postedAt: number; // unix ms
+};
+
+export type CaptureSource = 'acb' | 'momo' | 'other';
+
+export type ParsedCapture = {
+  captureId: string; // RawCapture.id
+  source: CaptureSource;
+  amount: number; // always positive, in VND
+  direction: 'debit' | 'credit'; // money out / money in
+  description: string; // transaction content ("GD:", "cho …", …), diacritics kept
+  text: string; // full original title + body — keyword checks run on this
+  occurredAt: number; // time stated in the text, else the notification's post time
+  balance?: number; // account balance after the transaction, when stated
+  confidence: 'high' | 'low'; // high = source-specific format matched
+};
+
+// What the pipeline should do with a parsed capture.
+export type CaptureVerdict =
+  | { kind: 'expense' }
+  | { kind: 'income' }
+  | { kind: 'internal'; reason: 'keyword' | 'own-account' }
+  | { kind: 'internal'; reason: 'pair'; pairedWith: string } // the opposite leg's captureId
+  | { kind: 'duplicate'; of: string; reason: 'same-source' | 'cross-source' | 'manual' };
+
+// Pipeline outcome persisted per capture (lib/captureIO.ts):
+//   logged   — became a transaction (transactionId set)
+//   pending  — expense with no bubble match; waits in the uncategorized inbox
+//   ignored  — internal transfer, duplicate, dismissed, or undone
+//   unparsed — not a transaction (promo, OTP, unknown app); kept for debugging
+export type CaptureStatus = 'logged' | 'pending' | 'ignored' | 'unparsed';
+
+export type StoredCapture = ParsedCapture & {
+  packageName: string;
+  verdict?: CaptureVerdict; // absent for unparsed
+  status: CaptureStatus;
+  transactionId?: string;
+  createdAt: number;
+};
+
 // --- Insight (year → month → week → day drill-down) aggregates ---
 // Each level's totals come straight from a GROUP BY query in lib/db.ts. Buckets
 // with no activity are absent from the rows (the data hook fills the gaps).

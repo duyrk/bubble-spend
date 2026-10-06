@@ -66,6 +66,8 @@ features/
   effects/
     Fireworks.tsx         Particle burst overlay
     useFireworks.ts       Fireworks particle state controller
+  capture/
+    CaptureInboxSheet.tsx Uncategorized auto-captured expenses — tap a bubble chip to file + learn
   onboarding/
     OnboardingOverlay.tsx First-launch coach overlay (gestures + income tip)
   timeline/
@@ -79,6 +81,8 @@ features/
     SettingsRow.tsx       Label + value row with optional right element
     OptionPickerModal.tsx Full-screen picker for single-select options
     RecurringListSheet.tsx Manage-recurring sheet — list all templates + per-row delete
+    CaptureDebugSheet.tsx  Android: processed-capture inspector (outcome per notification, share JSON, capture-all debug toggle)
+    OwnAccountsSheet.tsx   "My accounts" — own account numbers / names; transfers to/from them are internal
 
 stores/
   useCategoryStore.ts
@@ -86,6 +90,7 @@ stores/
   useRecurringStore.ts
   useUIStore.ts
   useSettingsStore.ts
+  useCaptureStore.ts      Auto-capture: uncategorized inbox + last auto-log run (Home undo toast)
 
 hooks/
   useGyroscopeTilt.ts     Low-pass filtered gyro → shared values
@@ -108,6 +113,10 @@ lib/
   trend.ts                computeTrendPoints — pure trend-line point normalization (unit-tested)
   period.ts               getPeriodRange — pure period → [start, end) ms range (unit-tested)
   bubbleSize.ts           computeBubbleSize — pure bubble-size formula (unit-tested)
+  notificationParser.ts   parseNotification — pure bank/e-wallet notification → ParsedCapture (ACB exact format, MoMo/generic heuristic; unit-tested)
+  captureClassify.ts      classifyCaptures — pure verdicts: expense / income / internal (MoMo↔ACB) / duplicate (unit-tested)
+  autoCategorize.ts       suggestCategory / merchantKey — pure bubble suggestion: learned rules → VN brand dictionary (unit-tested)
+  captureIO.ts            Auto-capture pipeline side effects — runCapturePipeline, assign/dismiss/undo, learnFromEdit
   notifications.ts        Schedule/cancel daily reminder
   i18n/
     translations.ts       English + Vietnamese string dictionaries
@@ -116,6 +125,11 @@ lib/
 constants/
   theme.ts                DARK_COLORS, LIGHT_COLORS, BUBBLE_COLORS_DARK/LIGHT, SIZES, SPRING, BLUR, RADII, TIMING
   config.ts               GYROSCOPE, GESTURE, DB_NAME
+
+modules/
+  notification-capture/   Local Expo module (Android only) — NotificationListenerService that queues
+                          MoMo/ACB notifications into a SharedPreferences inbox; JS facade in index.ts
+                          (no-op + isSupported=false on iOS). Plan: @docs/auto-capture-plan.md
 
 types/index.ts            Category, CategoryWithSize, Transaction, SyncQueueItem, Period, BubbleColorKey
 
@@ -214,6 +228,7 @@ Every transaction write: SQLite → sync_queue → update in-memory state. No ne
 - **Insight highlights:** the month level adds a "Spending habits" row — peak weekday + peak time-of-day bucket (morning 5–12 / afternoon 12–18 / evening 18–23 / night 23–5), reduced by the pure `computePeakSpending` (`lib/peaks.ts`) from SQL weekday×hour cells — and a "Biggest expense" card (`db.getLargestExpenseByMonth`; tap opens that day's sheet). The year level adds a spending trend line (react-native-svg) of monthly expense totals with an All/per-category chip filter; point math is the pure `computeTrendPoints` (`lib/trend.ts`), and the current year plots only through the current month (12-slot span keeps a partial year at its true horizontal position).
 - **Recurring templates:** optional per-category auto-log schedule — daily, weekly (weekday), or monthly (day 1–28), max one template per category. On app open (cold start **and** foreground resume, via an `AppState` listener in `app/_layout.tsx`) `fireDueRecurringTemplates()` silently logs each due template as a normal expense (SQLite + sync queue, one atomic batch) and stamps `last_fired_date` (local `YYYY-MM-DD`) as a same-day dedup. Strict day match — no catch-up for days the app stayed closed. Editing a template preserves its `lastFiredDate` so it can't double-fire the same day. Set from the quick-actions menu (*Set recurring* → `RecurringSheet`); view/delete all from Settings → General → Recurring expenses (`RecurringListSheet`). Deleting a category cascades to its template; backup import wipes all templates (backups don't carry them). Pure due-check in `lib/recurring.ts`, firing in `lib/recurringIO.ts`, state in `useRecurringStore`.
 - **Backup:** Settings → Data exports all categories + transactions to a JSON file (share sheet) and imports one back. Import **replaces** all local data via an atomic `db.replaceAllData` (wipe + bulk-insert in one transaction, clears the sync queue), then reloads the stores. Pure (de)serialization/validation in `lib/backup.ts`; device IO in `lib/backupIO.ts`.
+- **Notification auto-capture (Android only):** a local Expo module's `NotificationListenerService` queues MoMo (`com.mservice.momotransfer`) / ACB (`mobile.acb.com.vn`) notifications in SharedPreferences, even while the app is dead. `useCaptureStore.run()` (root layout: start, foreground, live debounced) parses → classifies → logs: debit with a bubble match (learned `merchant_rules` first, then the brand dictionary) → expense at the **bank's stated time**; credit → income; MoMo↔ACB transfers (keyword, opposite-leg pair within 5 min, or "My accounts") and duplicates (same-source re-post, both apps reporting one payment, a hand-entered tx within ±15 min) → skipped. No match → `pending`, shown as Home's "N uncategorized" pill; filing one (or re-filing an auto-logged expense in History) learns the rule. Every processed notification is a `captures` row (dedup memory + audit; pruned after 60 days if not logged/pending). Home shows an "Auto-logged N · Undo" toast per run. Only allowlisted apps ever become transactions (debug "capture all" never logs). In `__DEV__`, `adb … cmd notification post` notifications are aliased to MoMo/ACB for emulator testing. Plan/status: `docs/auto-capture-plan.md`.
 - **Pure logic is extracted + unit-tested:** `currency`, `period`, `bubbleSize`, `insights`, `budget`, `forecast`, `backup` import only types, so Jest runs them with no native shims. Keep new pure logic in `lib/*` (no RN/expo imports) with a sibling `*.test.ts`.
 
 ---
@@ -248,6 +263,8 @@ categories  (id, name, emoji, color_key, position_x, position_y, created_at, bud
 transactions (id, category_id, amount, transacted_at, note, synced)
 sync_queue  (id, operation, entity, payload, created_at)
 recurring_templates (id, category_id, amount, note, frequency, day_of_week, day_of_month, last_fired_date, active, created_at)
+captures (id, package_name, source, amount, direction, description, text, occurred_at, balance, confidence, verdict, status, transaction_id, created_at)
+merchant_rules (key, category_id, hits, updated_at)
 ```
 
 `budget` (monthly cap, nullable) is added by an idempotent PRAGMA-probed `ALTER` on existing installs, same pattern as `transactions.type`.
@@ -261,3 +278,4 @@ All SQLite via `expo-sqlite` synchronous API: `execSync`, `runSync`, `getAllSync
 - `@docs/PRD.md` — full product requirements, feature list, priorities
 - `@docs/architecture.md` — data flow, store design, animation/gesture architecture
 - `@docs/decisions.md` — locked design decisions with rationale
+- `@docs/auto-capture-plan.md` — notification auto-capture (Android, MoMo + ACB) phases & status

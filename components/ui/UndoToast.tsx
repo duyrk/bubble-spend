@@ -24,17 +24,20 @@ interface UndoToastProps {
   // Stable id of the undoable transaction. A new value re-arms the toast;
   // null hides it.
   id: string | null;
+  // Defaults to "Logged". Auto-capture passes e.g. "Auto-logged 3 · 185.000 ₫".
+  label?: string;
   onUndo: () => void;
   onDismiss: () => void;
 }
 
-export function UndoToast({ id, onUndo, onDismiss }: UndoToastProps) {
+export function UndoToast({ id, label, onUndo, onDismiss }: UndoToastProps) {
   const insets = useSafeAreaInsets();
   const colors = useColors();
   const resolvedTheme = useResolvedTheme();
   const { t } = useTranslation();
 
   const visible = id !== null;
+  const text = label ?? t('logged');
   const translateY = useSharedValue(120);
   const opacity = useSharedValue(0);
 
@@ -78,7 +81,7 @@ export function UndoToast({ id, onUndo, onDismiss }: UndoToastProps) {
       >
         <View style={styles.row}>
           <Text style={[styles.label, { color: colors.text.secondary }]}>
-            {t('logged')}
+            {text}
           </Text>
           <Pressable onPress={handleUndo} hitSlop={10} style={styles.undoBtn}>
             <Text style={[styles.undoText, { color: colors.accent }]}>

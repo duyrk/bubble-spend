@@ -1,0 +1,16 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application>
+    <!-- Bound by the system once the user grants "Notification access" in
+         Settings. Runs independently of the JS runtime, so captures land in the
+         on-disk inbox even while the app is killed. -->
+    <service
+      android:name="expo.modules.notificationcapture.CaptureListenerService"
+      android:label="Bubble Spend"
+      android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+      android:exported="true">
+      <intent-filter>
+        <action android:name="android.service.notification.NotificationListenerService" />
+      </intent-filter>
+    </service>
+  </application>
+</manifest>
